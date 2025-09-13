@@ -79,11 +79,16 @@ server/
 │   ├── routes/
 │   │   ├── auth.js           # Authentication routes
 │   │   ├── products.js       # Product management routes
-│   │   └── users.js          # User management routes
+│   │   ├── users.js          # User management routes
+│   │   ├── customers.js      # Customer management routes
+│   │   ├── dashboard.js      # Dashboard analytics routes
+│   │   ├── bookings.js       # Booking management routes
+│   │   └── payments.js       # Payment processing routes
 │   ├── middleware/
 │   │   └── auth.js           # Authentication middleware
 │   └── database/
-│       └── init.js           # Database initialization script
+│       ├── init.js           # Database initialization script
+│       └── migrate.js        # Database migration script
 ├── database/
 │   └── schema.sql            # Database table definitions
 ├── package.json              # Dependencies and scripts
@@ -499,12 +504,280 @@ Routes that require authentication will return:
 Some endpoints require admin role (`role: "admin"`):
 
 - `GET /api/users/:id` - Get user details
-- Future endpoints: Create/Update/Delete products, Manage users
 
 **Sample Admin User:**
 
 - Email: `admin@joantee.com`
 - Password: `admin123`
+
+### Customer Management Endpoints
+
+#### 1. Get All Customers
+
+- **URL:** `GET /api/customers`
+- **Description:** Retrieve all customers with complete profile data
+- **Headers:** None required
+- **Response (200):**
+  ```json
+  {
+    "message": "Customers retrieved successfully",
+    "count": 1,
+    "customers": [
+      {
+        "id": "2",
+        "firstName": "Test",
+        "lastName": "User",
+        "email": "test@example.com",
+        "phone": "+1234567890",
+        "dateOfBirth": null,
+        "gender": null,
+        "address": {
+          "street": "123 Main St",
+          "city": "New York",
+          "state": "NY",
+          "zipCode": "10001",
+          "country": "USA"
+        },
+        "preferences": {
+          "size": ["M", "L"],
+          "colors": ["Blue", "Black"],
+          "brands": ["Nike", "Adidas"],
+          "categories": ["T-Shirts", "Jeans"],
+          "priceRange": {
+            "min": 20,
+            "max": 100
+          },
+          "communication": {
+            "email": true,
+            "sms": false,
+            "push": true
+          }
+        },
+        "loyaltyPoints": 150,
+        "loyaltyTier": "silver",
+        "totalSpent": 299.97,
+        "totalOrders": 3,
+        "averageOrderValue": 99.99,
+        "lastPurchaseDate": "2024-01-15T10:30:00.000Z",
+        "registrationDate": "2024-01-01T00:00:00.000Z",
+        "status": "active",
+        "tags": ["VIP", "High Value"],
+        "notes": "Prefers express shipping",
+        "avatar": null
+      }
+    ]
+  }
+  ```
+
+#### 2. Get Single Customer
+
+- **URL:** `GET /api/customers/:id`
+- **Description:** Retrieve a specific customer by ID
+- **Headers:** None required
+- **Parameters:** `:id` - Customer ID (number)
+- **Response (200):**
+  ```json
+  {
+    "message": "Customer retrieved successfully",
+    "customer": {
+      "id": "2",
+      "firstName": "Test",
+      "lastName": "User",
+      "email": "test@example.com"
+      // ... complete customer object
+    }
+  }
+  ```
+- **Error Responses:**
+  - **400 Bad Request:** Invalid customer ID format
+  - **404 Not Found:** Customer not found
+
+#### 3. Get Customer Segments
+
+- **URL:** `GET /api/customers/segments`
+- **Description:** Retrieve all customer segments for targeting
+- **Headers:** None required
+- **Response (200):**
+  ```json
+  {
+    "message": "Customer segments retrieved successfully",
+    "count": 2,
+    "segments": [
+      {
+        "id": "1",
+        "name": "High Value Customers",
+        "description": "Customers who have spent over $500",
+        "criteria": {
+          "totalSpent": {
+            "min": 500
+          }
+        },
+        "customerCount": 25,
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+#### 4. Get Loyalty Programs
+
+- **URL:** `GET /api/customers/loyalty`
+- **Description:** Retrieve all loyalty programs
+- **Headers:** None required
+- **Response (200):**
+  ```json
+  {
+    "message": "Loyalty programs retrieved successfully",
+    "count": 1,
+    "programs": [
+      {
+        "id": "1",
+        "name": "VIP Rewards Program",
+        "description": "Exclusive rewards for loyal customers",
+        "type": "annual",
+        "startDate": "2024-01-01",
+        "endDate": "2024-12-31",
+        "tiers": [
+          {
+            "name": "Bronze",
+            "minPoints": 0,
+            "benefits": ["5% discount"],
+            "discountPercentage": 5
+          },
+          {
+            "name": "Silver",
+            "minPoints": 1000,
+            "benefits": ["10% discount", "Free shipping"],
+            "discountPercentage": 10
+          }
+        ],
+        "rewards": [
+          {
+            "id": "1",
+            "name": "Free Shipping",
+            "description": "Complimentary shipping on all orders",
+            "pointsRequired": 500,
+            "type": "free_shipping",
+            "value": 0,
+            "isActive": true
+          }
+        ],
+        "isActive": true,
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+#### 5. Get Communication Campaigns
+
+- **URL:** `GET /api/customers/communications`
+- **Description:** Retrieve all communication campaigns
+- **Headers:** None required
+- **Response (200):**
+  ```json
+  {
+    "message": "Communication campaigns retrieved successfully",
+    "count": 1,
+    "campaigns": [
+      {
+        "id": "1",
+        "name": "Welcome Email Series",
+        "type": "email",
+        "subject": "Welcome to Joantee!",
+        "content": "Thank you for joining us...",
+        "targetSegment": "New Customers",
+        "targetCustomers": ["2", "3", "4"],
+        "scheduledDate": "2024-01-15T09:00:00.000Z",
+        "sentDate": "2024-01-15T09:05:00.000Z",
+        "status": "sent",
+        "openRate": 75.5,
+        "clickRate": 12.3,
+        "deliveryRate": 98.7,
+        "createdAt": "2024-01-10T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+#### 6. Get Customer Purchase History
+
+- **URL:** `GET /api/customers/:id/purchases`
+- **Description:** Retrieve purchase history for a specific customer
+- **Headers:** None required
+- **Parameters:** `:id` - Customer ID (number)
+- **Response (200):**
+  ```json
+  {
+    "message": "Customer purchase history retrieved successfully",
+    "count": 2,
+    "purchases": [
+      {
+        "id": "1",
+        "customerId": "2",
+        "orderDate": "2024-01-15T10:30:00.000Z",
+        "items": [
+          {
+            "id": "1",
+            "name": "Classic White T-Shirt",
+            "size": "M",
+            "color": "White",
+            "price": 29.99,
+            "quantity": 2,
+            "image": "https://example.com/tshirt.jpg"
+          }
+        ],
+        "totalAmount": 59.98,
+        "status": "completed",
+        "paymentMethod": "credit_card",
+        "shippingAddress": {
+          "street": "123 Main St",
+          "city": "New York",
+          "state": "NY",
+          "zipCode": "10001",
+          "country": "USA"
+        }
+      }
+    ]
+  }
+  ```
+
+#### 7. Get Customer Activity
+
+- **URL:** `GET /api/customers/:id/activity`
+- **Description:** Retrieve activity log for a specific customer
+- **Headers:** None required
+- **Parameters:** `:id` - Customer ID (number)
+- **Response (200):**
+  ```json
+  {
+    "message": "Customer activity retrieved successfully",
+    "count": 5,
+    "activities": [
+      {
+        "id": "1",
+        "customerId": "2",
+        "type": "purchase",
+        "description": "Completed order #12345",
+        "timestamp": "2024-01-15T10:30:00.000Z",
+        "metadata": {
+          "orderId": "12345",
+          "amount": 59.98
+        }
+      },
+      {
+        "id": "2",
+        "customerId": "2",
+        "type": "login",
+        "description": "Logged into account",
+        "timestamp": "2024-01-15T09:15:00.000Z",
+        "metadata": {
+          "ipAddress": "192.168.1.1"
+        }
+      }
+    ]
+  }
+  ```
 
 ## 📊 Database Schema
 
@@ -596,8 +869,15 @@ The database comes pre-loaded with:
 5. ✅ Create basic user management API
 6. ✅ Add product management (Create, Update, Delete)
 7. ✅ Add user listing and management
-8. 🔄 Implement order system
-9. 🔄 Add validation and error handling
+8. ✅ Add customer management system
+9. ✅ Add customer segments and loyalty programs
+10. ✅ Add communication campaigns
+11. ✅ Add purchase history tracking
+12. ✅ Add customer activity logging
+13. 🔄 Implement shopping cart system
+14. 🔄 Implement order creation from cart
+15. 🔄 Add payment processing integration
+16. 🔄 Add customer-facing profile management
 
 ## 🆘 Troubleshooting
 
