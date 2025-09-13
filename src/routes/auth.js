@@ -28,6 +28,7 @@ router.post(
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
+          success: false,
           message: "Validation failed",
           errors: errors.array(),
         });
@@ -43,6 +44,7 @@ router.post(
 
       if (userExists.rows.length > 0) {
         return res.status(400).json({
+          success: false,
           message: "User already exists with this email",
         });
       }
@@ -69,6 +71,7 @@ router.post(
       );
 
       res.status(201).json({
+        success: true,
         message: "User registered successfully",
         user: {
           id: newUser.rows[0].id,
@@ -82,6 +85,7 @@ router.post(
     } catch (error) {
       console.error("Registration error:", error);
       res.status(500).json({
+        success: false,
         message: "Server error during registration",
       });
     }
@@ -98,6 +102,7 @@ router.post(
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
+          success: false,
           message: "Validation failed",
           errors: errors.array(),
         });
@@ -113,6 +118,7 @@ router.post(
 
       if (user.rows.length === 0) {
         return res.status(400).json({
+          success: false,
           message: "Invalid email or password",
         });
       }
@@ -125,6 +131,7 @@ router.post(
 
       if (!isValidPassword) {
         return res.status(400).json({
+          success: false,
           message: "Invalid email or password",
         });
       }
@@ -147,6 +154,7 @@ router.post(
       );
 
       res.json({
+        success: true,
         message: "Login successful",
         user: {
           id: user.rows[0].id,
@@ -160,6 +168,7 @@ router.post(
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({
+        success: false,
         message: "Server error during login",
       });
     }
@@ -174,6 +183,7 @@ router.get("/profile", async (req, res) => {
 
     if (!token) {
       return res.status(401).json({
+        success: false,
         message: "Access denied. No token provided.",
       });
     }
@@ -189,16 +199,20 @@ router.get("/profile", async (req, res) => {
 
     if (user.rows.length === 0) {
       return res.status(404).json({
+        success: false,
         message: "User not found",
       });
     }
 
     res.json({
+      success: true,
+      message: "Profile retrieved successfully",
       user: user.rows[0],
     });
   } catch (error) {
     console.error("Profile error:", error);
     res.status(500).json({
+      success: false,
       message: "Server error getting profile",
     });
   }

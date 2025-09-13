@@ -131,6 +131,7 @@ http://localhost:5000
 - **Response (201):**
   ```json
   {
+    "success": true,
     "message": "User registered successfully",
     "user": {
       "id": 1,
@@ -157,6 +158,7 @@ http://localhost:5000
 - **Response (200):**
   ```json
   {
+    "success": true,
     "message": "Login successful",
     "user": {
       "id": 1,
@@ -177,6 +179,8 @@ http://localhost:5000
 - **Response (200):**
   ```json
   {
+    "success": true,
+    "message": "Profile retrieved successfully",
     "user": {
       "id": 1,
       "email": "user@example.com",

@@ -20,6 +20,7 @@ router.get("/", async (req, res) => {
     );
 
     res.json({
+      success: true,
       message: "Products retrieved successfully",
       count: result.rows.length,
       products: result.rows,
@@ -27,6 +28,7 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("Error fetching products:", error);
     res.status(500).json({
+      success: false,
       message: "Server error while fetching products",
       error: error.message,
     });
@@ -40,6 +42,7 @@ router.get("/:id", async (req, res) => {
 
     if (isNaN(productId)) {
       return res.status(400).json({
+        success: false,
         message: "Invalid product ID. Must be a number.",
       });
     }
@@ -51,17 +54,20 @@ router.get("/:id", async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({
+        success: false,
         message: "Product not found",
       });
     }
 
     res.json({
+      success: true,
       message: "Product retrieved successfully",
       product: result.rows[0],
     });
   } catch (error) {
     console.error("Error fetching product:", error);
     res.status(500).json({
+      success: false,
       message: "Server error while fetching product",
       error: error.message,
     });
@@ -88,6 +94,7 @@ router.post(
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
+          success: false,
           message: "Validation failed",
           errors: errors.array(),
         });
@@ -153,6 +160,7 @@ router.put(
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
+          success: false,
           message: "Validation failed",
           errors: errors.array(),
         });
@@ -161,6 +169,7 @@ router.put(
       const productId = parseInt(req.params.id);
       if (isNaN(productId)) {
         return res.status(400).json({
+          success: false,
           message: "Invalid product ID. Must be a number.",
         });
       }
@@ -184,6 +193,7 @@ router.put(
 
       if (existingProduct.rows.length === 0) {
         return res.status(404).json({
+          success: false,
           message: "Product not found",
         });
       }
@@ -249,12 +259,14 @@ router.put(
       const updatedProduct = await pool.query(updateQuery, updateValues);
 
       res.json({
+        success: true,
         message: "Product updated successfully",
         product: updatedProduct.rows[0],
       });
     } catch (error) {
       console.error("Error updating product:", error);
       res.status(500).json({
+        success: false,
         message: "Server error while updating product",
         error: error.message,
       });
@@ -269,6 +281,7 @@ router.delete("/:id", adminAuth, async (req, res) => {
 
     if (isNaN(productId)) {
       return res.status(400).json({
+        success: false,
         message: "Invalid product ID. Must be a number.",
       });
     }
@@ -281,6 +294,7 @@ router.delete("/:id", adminAuth, async (req, res) => {
 
     if (existingProduct.rows.length === 0) {
       return res.status(404).json({
+        success: false,
         message: "Product not found",
       });
     }
@@ -292,6 +306,7 @@ router.delete("/:id", adminAuth, async (req, res) => {
     );
 
     res.json({
+      success: true,
       message: "Product deleted successfully",
       product: {
         id: deletedProduct.rows[0].id,
@@ -302,6 +317,7 @@ router.delete("/:id", adminAuth, async (req, res) => {
   } catch (error) {
     console.error("Error deleting product:", error);
     res.status(500).json({
+      success: false,
       message: "Server error while deleting product",
       error: error.message,
     });
