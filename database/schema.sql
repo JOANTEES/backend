@@ -240,6 +240,21 @@ CREATE TABLE IF NOT EXISTS purchase_history_items (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Shopping Cart Tables
+
+-- Cart items table
+CREATE TABLE IF NOT EXISTS cart_items (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    size VARCHAR(20),
+    color VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, product_id, size, color)
+);
+
 -- Create indexes for customer management tables
 CREATE INDEX IF NOT EXISTS idx_customer_segments_name ON customer_segments(name);
 CREATE INDEX IF NOT EXISTS idx_loyalty_programs_active ON loyalty_programs(is_active);
@@ -253,6 +268,10 @@ CREATE INDEX IF NOT EXISTS idx_customer_activity_type ON customer_activity(type)
 CREATE INDEX IF NOT EXISTS idx_purchase_history_customer_id ON purchase_history(customer_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_history_order_date ON purchase_history(order_date);
 CREATE INDEX IF NOT EXISTS idx_purchase_history_items_purchase_id ON purchase_history_items(purchase_id);
+
+-- Create indexes for cart tables
+CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);
 
 -- Insert sample products
 INSERT INTO products (name, description, price, category, size, color, stock_quantity) VALUES

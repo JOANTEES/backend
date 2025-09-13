@@ -15,6 +15,7 @@ const dashboardRoutes = require("./routes/dashboard");
 const bookingsRoutes = require("./routes/bookings");
 const paymentsRoutes = require("./routes/payments");
 const customersRoutes = require("./routes/customers");
+const cartRoutes = require("./routes/cart");
 
 // Database connection
 const pool = new Pool({
@@ -48,6 +49,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/bookings", bookingsRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/customers", customersRoutes);
+app.use("/api/cart", cartRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -116,6 +118,12 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
       `   GET /api/customers/:id/purchases - Get customer purchase history`
     );
     console.log(`   GET /api/customers/:id/activity - Get customer activity`);
+    console.log(`🛒 Cart endpoints:`);
+    console.log(`   GET /api/cart - Get user's cart`);
+    console.log(`   POST /api/cart/add - Add item to cart`);
+    console.log(`   PUT /api/cart/:itemId - Update cart item quantity`);
+    console.log(`   DELETE /api/cart/:itemId - Remove item from cart`);
+    console.log(`   DELETE /api/cart/clear - Clear entire cart`);
   });
 }
 

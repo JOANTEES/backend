@@ -783,6 +783,168 @@ Some endpoints require admin role (`role: "admin"`):
   }
   ```
 
+### Shopping Cart Endpoints
+
+#### 1. Get User's Cart
+
+- **URL:** `GET /api/cart`
+- **Description:** Retrieve user's shopping cart with product details and totals
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Cart retrieved successfully",
+    "data": {
+      "items": [
+        {
+          "id": "1",
+          "productId": "2",
+          "productName": "Classic White T-Shirt",
+          "description": "Premium cotton classic fit t-shirt",
+          "price": 29.99,
+          "category": "T-Shirts",
+          "imageUrl": "https://example.com/tshirt.jpg",
+          "stockQuantity": 45,
+          "quantity": 2,
+          "size": "M",
+          "color": "White",
+          "subtotal": 59.98,
+          "createdAt": "2024-01-15T10:30:00.000Z"
+        }
+      ],
+      "totals": {
+        "subtotal": 59.98,
+        "tax": 5.99,
+        "shipping": 10.0,
+        "total": 75.97
+      },
+      "itemCount": 1
+    }
+  }
+  ```
+
+#### 2. Add Item to Cart
+
+- **URL:** `POST /api/cart/add`
+- **Description:** Add a product to the user's cart (reduces stock quantity)
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Request Body:**
+  ```json
+  {
+    "productId": 2,
+    "quantity": 2,
+    "size": "M",
+    "color": "White"
+  }
+  ```
+- **Response (201):**
+  ```json
+  {
+    "success": true,
+    "message": "Item added to cart successfully",
+    "data": {
+      "items": [...],
+      "totals": {
+        "subtotal": 59.98,
+        "tax": 5.99,
+        "shipping": 10.00,
+        "total": 75.97
+      },
+      "itemCount": 1
+    }
+  }
+  ```
+- **Error Responses:**
+  - **400 Bad Request:** Validation failed, insufficient stock, or product not available
+  - **404 Not Found:** Product not found
+
+#### 3. Update Cart Item Quantity
+
+- **URL:** `PUT /api/cart/:itemId`
+- **Description:** Update the quantity of an item in the cart (adjusts stock)
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Parameters:** `:itemId` - Cart item ID
+- **Request Body:**
+  ```json
+  {
+    "quantity": 3
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Cart item updated successfully",
+    "data": {
+      "items": [...],
+      "totals": {
+        "subtotal": 89.97,
+        "tax": 8.99,
+        "shipping": 10.00,
+        "total": 108.96
+      },
+      "itemCount": 1
+    }
+  }
+  ```
+
+#### 4. Remove Item from Cart
+
+- **URL:** `DELETE /api/cart/:itemId`
+- **Description:** Remove an item from the cart (restores stock quantity)
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Parameters:** `:itemId` - Cart item ID
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Item removed from cart successfully",
+    "data": {
+      "items": [],
+      "totals": {
+        "subtotal": 0,
+        "tax": 0,
+        "shipping": 0,
+        "total": 0
+      },
+      "itemCount": 0
+    }
+  }
+  ```
+
+#### 5. Clear Entire Cart
+
+- **URL:** `DELETE /api/cart/clear`
+- **Description:** Remove all items from the cart (restores all stock)
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Cart cleared successfully",
+    "data": {
+      "items": [],
+      "totals": {
+        "subtotal": 0,
+        "tax": 0,
+        "shipping": 0,
+        "total": 0
+      },
+      "itemCount": 0
+    }
+  }
+  ```
+
+### Cart Features
+
+- **Stock Management:** Stock quantity automatically reduces when adding to cart and restores when removing
+- **Transaction Safety:** All operations use database transactions to ensure data consistency
+- **Activity Logging:** All cart actions are logged in customer activity
+- **Smart Totals:** Automatically calculates subtotal, tax (10%), and shipping (free over $100)
+- **Duplicate Prevention:** Same product with same size/color updates quantity instead of creating duplicate entries
+- **Validation:** Comprehensive input validation and error handling
+
 ## 📊 Database Schema
 
 ### Users Table Structure
