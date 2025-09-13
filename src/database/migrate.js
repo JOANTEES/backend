@@ -220,9 +220,26 @@ async function migrate() {
       UNIQUE(user_id, product_id, size, color)
     );`,
 
+    // Delivery Zones Table
+    `CREATE TABLE IF NOT EXISTS delivery_zones (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      delivery_fee DECIMAL(10,2) NOT NULL CHECK (delivery_fee >= 0),
+      estimated_days VARCHAR(50) NOT NULL,
+      coverage_areas TEXT[],
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
     // Create indexes for cart tables
     "CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);",
     "CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);",
+
+    // Create indexes for delivery zones
+    "CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_zones_name ON delivery_zones(name);",
   ];
 
   try {

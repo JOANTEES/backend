@@ -16,6 +16,7 @@ const bookingsRoutes = require("./routes/bookings");
 const paymentsRoutes = require("./routes/payments");
 const customersRoutes = require("./routes/customers");
 const cartRoutes = require("./routes/cart");
+const deliveryZonesRoutes = require("./routes/delivery-zones");
 
 // Database connection
 const pool = new Pool({
@@ -50,6 +51,7 @@ app.use("/api/bookings", bookingsRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/customers", customersRoutes);
 app.use("/api/cart", cartRoutes);
+app.use("/api/delivery-zones", deliveryZonesRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -124,6 +126,21 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(`   PUT /api/cart/:itemId - Update cart item quantity`);
     console.log(`   DELETE /api/cart/:itemId - Remove item from cart`);
     console.log(`   DELETE /api/cart/clear - Clear entire cart`);
+    console.log(`🚚 Delivery zones endpoints:`);
+    console.log(`   GET /api/delivery-zones - Get available delivery zones`);
+    console.log(`   GET /api/delivery-zones/:id - Get single delivery zone`);
+    console.log(
+      `   POST /api/delivery-zones - Create delivery zone (admin only)`
+    );
+    console.log(
+      `   PUT /api/delivery-zones/:id - Update delivery zone (admin only)`
+    );
+    console.log(
+      `   DELETE /api/delivery-zones/:id - Delete delivery zone (admin only)`
+    );
+    console.log(
+      `   GET /api/delivery-zones/admin - Get all zones including inactive (admin only)`
+    );
   });
 }
 

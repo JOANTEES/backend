@@ -945,6 +945,217 @@ Some endpoints require admin role (`role: "admin"`):
 - **Duplicate Prevention:** Same product with same size/color updates quantity instead of creating duplicate entries
 - **Validation:** Comprehensive input validation and error handling
 
+### Order Management System (Coming Soon)
+
+The order management system is currently being developed and will include:
+
+#### **Planned Order Endpoints:**
+
+- `POST /api/orders` - Create order from cart
+- `GET /api/orders` - Get user's orders
+- `GET /api/orders/:id` - Get order details
+- `GET /api/orders/:id/tracking` - Track order status
+- `PUT /api/orders/:id/status` - Update order status (admin)
+- `GET /api/orders/admin` - Get all orders (admin)
+
+#### **Delivery Zones System (Available Now):**
+
+- `GET /api/delivery-zones` - Get available delivery zones
+- `GET /api/delivery-zones/:id` - Get single delivery zone
+- `POST /api/delivery-zones` - Create delivery zone (admin)
+- `PUT /api/delivery-zones/:id` - Update delivery zone (admin)
+- `DELETE /api/delivery-zones/:id` - Delete delivery zone (admin)
+- `GET /api/delivery-zones/admin` - Get all zones including inactive (admin)
+
+#### **Planned Admin Settings:**
+
+- `GET /api/admin/settings` - Get business settings
+- `PUT /api/admin/settings` - Update business settings
+- `GET /api/admin/pickup-location` - Get pickup location
+- `PUT /api/admin/pickup-location` - Update pickup location
+
+#### **Order Features (Planned):**
+
+- **Delivery Zones:** Admin-controlled delivery areas with specific fees
+- **Address Collection:** Landmark-based address system for Ghana
+- **Google Maps Integration:** Automatic map link generation
+- **Order Tracking:** Real-time status updates
+- **Status Notifications:** Email/SMS updates (future)
+- **Payment Options:** Online payment and Cash on Delivery
+- **Pickup Option:** Free pickup from store location
+
+#### **Order Status Flow:**
+
+```
+pending → confirmed → processing → picked_up → in_transit → delivered
+```
+
+### Delivery Zones Endpoints
+
+#### 1. Get Available Delivery Zones
+
+- **URL:** `GET /api/delivery-zones`
+- **Description:** Retrieve all active delivery zones for customer selection
+- **Headers:** None required
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Delivery zones retrieved successfully",
+    "count": 2,
+    "zones": [
+      {
+        "id": "1",
+        "name": "East Legon",
+        "description": "East Legon and surrounding areas",
+        "deliveryFee": 15.0,
+        "estimatedDays": "1-2 days",
+        "coverageAreas": ["East Legon", "Labone", "Cantonments"],
+        "isActive": true,
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      }
+    ]
+  }
+  ```
+
+#### 2. Get Single Delivery Zone
+
+- **URL:** `GET /api/delivery-zones/:id`
+- **Description:** Retrieve details of a specific delivery zone
+- **Headers:** None required
+- **Parameters:** `:id` - Delivery zone ID (number)
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Delivery zone retrieved successfully",
+    "zone": {
+      "id": "1",
+      "name": "East Legon",
+      "description": "East Legon and surrounding areas",
+      "deliveryFee": 15.0,
+      "estimatedDays": "1-2 days",
+      "coverageAreas": ["East Legon", "Labone", "Cantonments"],
+      "isActive": true,
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  }
+  ```
+
+#### 3. Create Delivery Zone (Admin Only)
+
+- **URL:** `POST /api/delivery-zones`
+- **Description:** Create a new delivery zone
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Request Body:**
+  ```json
+  {
+    "name": "Tema",
+    "description": "Tema and surrounding areas",
+    "deliveryFee": 25.0,
+    "estimatedDays": "2-3 days",
+    "coverageAreas": ["Tema", "Kpone", "Ashaiman"]
+  }
+  ```
+- **Response (201):**
+  ```json
+  {
+    "success": true,
+    "message": "Delivery zone created successfully",
+    "zone": {
+      "id": "2",
+      "name": "Tema",
+      "description": "Tema and surrounding areas",
+      "deliveryFee": 25.0,
+      "estimatedDays": "2-3 days",
+      "coverageAreas": ["Tema", "Kpone", "Ashaiman"],
+      "isActive": true,
+      "createdAt": "2024-01-15T11:00:00.000Z"
+    }
+  }
+  ```
+
+#### 4. Update Delivery Zone (Admin Only)
+
+- **URL:** `PUT /api/delivery-zones/:id`
+- **Description:** Update an existing delivery zone
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Parameters:** `:id` - Delivery zone ID (number)
+- **Request Body:**
+  ```json
+  {
+    "deliveryFee": 20.0,
+    "estimatedDays": "1-2 days",
+    "isActive": true
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Delivery zone updated successfully",
+    "zone": {
+      "id": "1",
+      "name": "East Legon",
+      "description": "East Legon and surrounding areas",
+      "deliveryFee": 20.0,
+      "estimatedDays": "1-2 days",
+      "coverageAreas": ["East Legon", "Labone", "Cantonments"],
+      "isActive": true,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T12:00:00.000Z"
+    }
+  }
+  ```
+
+#### 5. Delete Delivery Zone (Admin Only)
+
+- **URL:** `DELETE /api/delivery-zones/:id`
+- **Description:** Deactivate a delivery zone (soft delete)
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Parameters:** `:id` - Delivery zone ID (number)
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Delivery zone deactivated successfully",
+    "zone": {
+      "id": "1",
+      "name": "East Legon",
+      "isActive": false
+    }
+  }
+  ```
+
+#### 6. Get All Delivery Zones (Admin Only)
+
+- **URL:** `GET /api/delivery-zones/admin`
+- **Description:** Retrieve all delivery zones including inactive ones
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "All delivery zones retrieved successfully",
+    "count": 3,
+    "zones": [
+      {
+        "id": "1",
+        "name": "East Legon",
+        "description": "East Legon and surrounding areas",
+        "deliveryFee": 15.0,
+        "estimatedDays": "1-2 days",
+        "coverageAreas": ["East Legon", "Labone", "Cantonments"],
+        "isActive": true,
+        "createdAt": "2024-01-15T10:30:00.000Z",
+        "updatedAt": null
+      }
+    ]
+  }
+  ```
+
+**Note:** The delivery zones system is fully functional and ready for frontend integration. The cart system is also fully functional and ready for frontend integration.
+
 ## 📊 Database Schema
 
 ### Users Table Structure
