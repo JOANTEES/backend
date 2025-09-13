@@ -25,7 +25,14 @@ async function getAppSettings() {
       large_order_delivery_fee: 50.0,
     };
   }
-  return result.rows[0];
+  // Parse numeric values from string to float to prevent type errors
+  const settings = result.rows[0];
+  return {
+    ...settings,
+    tax_rate: parseFloat(settings.tax_rate),
+    free_shipping_threshold: parseFloat(settings.free_shipping_threshold),
+    large_order_delivery_fee: parseFloat(settings.large_order_delivery_fee),
+  };
 }
 
 // Helper function to get a user's cart, creating one if it doesn't exist
@@ -216,12 +223,10 @@ router.post(
         const newQuantity = existingItem.rows[0].quantity + quantity;
         if (product.stock_quantity < newQuantity) {
           await client.query("ROLLBACK");
-          return res
-            .status(400)
-            .json({
-              success: false,
-              message: `Not enough stock. Only ${product.stock_quantity} available.`,
-            });
+          return res.status(400).json({
+            success: false,
+            message: `Not enough stock. Only ${product.stock_quantity} available.`,
+          });
         }
         await client.query(
           "UPDATE cart_items SET quantity = $1 WHERE id = $2",
@@ -230,12 +235,10 @@ router.post(
       } else {
         if (product.stock_quantity < quantity) {
           await client.query("ROLLBACK");
-          return res
-            .status(400)
-            .json({
-              success: false,
-              message: `Not enough stock. Only ${product.stock_quantity} available.`,
-            });
+          return res.status(400).json({
+            success: false,
+            message: `Not enough stock. Only ${product.stock_quantity} available.`,
+          });
         }
         await client.query(
           "INSERT INTO cart_items (cart_id, product_id, quantity, size, color) VALUES ($1, $2, $3, $4, $5)",
@@ -293,12 +296,10 @@ router.put(
     const userId = req.user.id;
 
     if (deliveryMethod === "delivery" && !deliveryZoneId) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Delivery Zone ID is required for delivery.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Delivery Zone ID is required for delivery.",
+      });
     }
 
     try {
