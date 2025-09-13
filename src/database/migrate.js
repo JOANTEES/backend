@@ -56,6 +56,156 @@ async function migrate() {
     );`,
     "CREATE INDEX IF NOT EXISTS idx_payments_booking_id ON payments(booking_id);",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);",
+
+    // Customer Management Tables
+    `CREATE TABLE IF NOT EXISTS customer_segments (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      criteria JSONB NOT NULL,
+      customer_count INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS loyalty_programs (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      type VARCHAR(20) NOT NULL CHECK (type IN ('quarterly', 'annual', 'custom')),
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      tiers JSONB NOT NULL,
+      rewards JSONB NOT NULL,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS communication_campaigns (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      type VARCHAR(10) NOT NULL CHECK (type IN ('email', 'sms')),
+      subject VARCHAR(255),
+      content TEXT NOT NULL,
+      target_segment VARCHAR(255),
+      target_customers TEXT[],
+      scheduled_date TIMESTAMP,
+      sent_date TIMESTAMP,
+      status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'sent', 'failed')),
+      open_rate DECIMAL(5,2),
+      click_rate DECIMAL(5,2),
+      delivery_rate DECIMAL(5,2),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS customer_preferences (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      sizes TEXT[],
+      colors TEXT[],
+      brands TEXT[],
+      categories TEXT[],
+      price_min DECIMAL(10,2),
+      price_max DECIMAL(10,2),
+      email_notifications BOOLEAN DEFAULT true,
+      sms_notifications BOOLEAN DEFAULT false,
+      push_notifications BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS customer_loyalty (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      loyalty_points INTEGER DEFAULT 0,
+      loyalty_tier VARCHAR(20) DEFAULT 'bronze' CHECK (loyalty_tier IN ('bronze', 'silver', 'gold', 'platinum')),
+      total_spent DECIMAL(10,2) DEFAULT 0,
+      total_orders INTEGER DEFAULT 0,
+      average_order_value DECIMAL(10,2) DEFAULT 0,
+      last_purchase_date TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS customer_addresses (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      street VARCHAR(255) NOT NULL,
+      city VARCHAR(100) NOT NULL,
+      state VARCHAR(100) NOT NULL,
+      zip_code VARCHAR(20) NOT NULL,
+      country VARCHAR(100) NOT NULL,
+      is_default BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS customer_tags (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      tag VARCHAR(100) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS customer_notes (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      note TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS customer_activity (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      type VARCHAR(50) NOT NULL CHECK (type IN ('purchase', 'login', 'email_open', 'email_click', 'sms_sent', 'loyalty_earned', 'loyalty_redeemed')),
+      description TEXT NOT NULL,
+      metadata JSONB,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS purchase_history (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      order_date TIMESTAMP NOT NULL,
+      total_amount DECIMAL(10,2) NOT NULL,
+      status VARCHAR(20) NOT NULL CHECK (status IN ('completed', 'pending', 'cancelled', 'refunded')),
+      payment_method VARCHAR(50),
+      shipping_address JSONB NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS purchase_history_items (
+      id SERIAL PRIMARY KEY,
+      purchase_id INTEGER REFERENCES purchase_history(id) ON DELETE CASCADE,
+      product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+      product_name VARCHAR(255) NOT NULL,
+      size VARCHAR(20),
+      color VARCHAR(50),
+      price DECIMAL(10,2) NOT NULL,
+      quantity INTEGER NOT NULL,
+      image_url VARCHAR(500),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    // Create indexes for customer management tables
+    "CREATE INDEX IF NOT EXISTS idx_customer_segments_name ON customer_segments(name);",
+    "CREATE INDEX IF NOT EXISTS idx_loyalty_programs_active ON loyalty_programs(is_active);",
+    "CREATE INDEX IF NOT EXISTS idx_communication_campaigns_status ON communication_campaigns(status);",
+    "CREATE INDEX IF NOT EXISTS idx_customer_preferences_customer_id ON customer_preferences(customer_id);",
+    "CREATE INDEX IF NOT EXISTS idx_customer_loyalty_customer_id ON customer_loyalty(customer_id);",
+    "CREATE INDEX IF NOT EXISTS idx_customer_addresses_customer_id ON customer_addresses(customer_id);",
+    "CREATE INDEX IF NOT EXISTS idx_customer_tags_customer_id ON customer_tags(customer_id);",
+    "CREATE INDEX IF NOT EXISTS idx_customer_activity_customer_id ON customer_activity(customer_id);",
+    "CREATE INDEX IF NOT EXISTS idx_customer_activity_type ON customer_activity(type);",
+    "CREATE INDEX IF NOT EXISTS idx_purchase_history_customer_id ON purchase_history(customer_id);",
+    "CREATE INDEX IF NOT EXISTS idx_purchase_history_order_date ON purchase_history(order_date);",
+    "CREATE INDEX IF NOT EXISTS idx_purchase_history_items_purchase_id ON purchase_history_items(purchase_id);",
   ];
 
   try {
