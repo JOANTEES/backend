@@ -17,6 +17,7 @@ const paymentsRoutes = require("./routes/payments");
 const customersRoutes = require("./routes/customers");
 const cartRoutes = require("./routes/cart");
 const deliveryZonesRoutes = require("./routes/delivery-zones");
+const adminSettingsRoutes = require("./routes/admin-settings");
 
 // Database connection
 const pool = new Pool({
@@ -52,6 +53,7 @@ app.use("/api/payments", paymentsRoutes);
 app.use("/api/customers", customersRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/delivery-zones", deliveryZonesRoutes);
+app.use("/api/admin/settings", adminSettingsRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -141,6 +143,9 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(
       `   GET /api/delivery-zones/admin - Get all zones including inactive (admin only)`
     );
+    console.log(`⚙️  Admin settings endpoints:`);
+    console.log(`   GET /api/admin/settings - Get app settings`);
+    console.log(`   PUT /api/admin/settings - Update app settings`);
   });
 }
 

@@ -13,6 +13,9 @@ async function migrate() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP NULL;",
 
+    // Products table additive columns
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_special_delivery BOOLEAN DEFAULT false;",
+
     // Bookings table and indexes
     `CREATE TABLE IF NOT EXISTS bookings (
       id SERIAL PRIMARY KEY,
@@ -240,6 +243,23 @@ async function migrate() {
     // Create indexes for delivery zones
     "CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);",
     "CREATE INDEX IF NOT EXISTS idx_delivery_zones_name ON delivery_zones(name);",
+
+    // Application Settings Table
+    `CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      tax_rate DECIMAL(5, 2) NOT NULL DEFAULT 10.00,
+      free_shipping_threshold DECIMAL(10, 2) NOT NULL DEFAULT 100.00,
+      large_order_quantity_threshold INTEGER NOT NULL DEFAULT 10,
+      large_order_delivery_fee DECIMAL(10, 2) NOT NULL DEFAULT 50.00,
+      pickup_address TEXT,
+      currency_symbol VARCHAR(5) NOT NULL DEFAULT '$',
+      currency_code VARCHAR(3) NOT NULL DEFAULT 'USD',
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT single_row_check CHECK (id = 1)
+    );`,
+
+    // Insert default settings if the table is empty
+    `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`,
   ];
 
   try {

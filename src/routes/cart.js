@@ -50,7 +50,8 @@ async function getUserCart(userId) {
       p.price,
       p.category,
       p.image_url,
-      p.stock_quantity
+      p.stock_quantity,
+      p.requires_special_delivery
     FROM cart_items ci
     JOIN products p ON ci.product_id = p.id
     WHERE ci.user_id = $1 AND p.is_active = true
@@ -75,11 +76,58 @@ async function getUserCart(userId) {
   }));
 }
 
-// Helper function to calculate cart totals
-function calculateCartTotals(cartItems) {
+// Helper function to get app settings
+async function getAppSettings() {
+  const result = await pool.query("SELECT * FROM app_settings WHERE id = 1");
+  if (result.rows.length === 0) {
+    // Return default settings if none found
+    return {
+      tax_rate: 10.0,
+      free_shipping_threshold: 100.0,
+      large_order_quantity_threshold: 10,
+      large_order_delivery_fee: 50.0,
+    };
+  }
+  return result.rows[0];
+}
+
+// Helper function to calculate cart totals with dynamic settings
+async function calculateCartTotals(cartItems, deliveryZoneId = null) {
+  const settings = await getAppSettings();
   const subtotal = cartItems.reduce((sum, item) => sum + item.subtotal, 0);
-  const tax = subtotal * 0.1; // 10% tax
-  const shipping = subtotal > 100 ? 0 : 10; // Free shipping over $100
+  const totalQuantity = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  
+  // Calculate tax
+  const tax = subtotal * (settings.tax_rate / 100);
+  
+  // Calculate shipping
+  let shipping = 0;
+  
+  // Check if this is a large order (by quantity)
+  if (totalQuantity >= settings.large_order_quantity_threshold) {
+    shipping = settings.large_order_delivery_fee;
+  } else if (deliveryZoneId) {
+    // Get delivery zone fee
+    const zoneResult = await pool.query(
+      "SELECT delivery_fee FROM delivery_zones WHERE id = $1 AND is_active = true",
+      [deliveryZoneId]
+    );
+    if (zoneResult.rows.length > 0) {
+      shipping = parseFloat(zoneResult.rows[0].delivery_fee);
+    }
+  }
+  
+  // Check if any product requires special delivery
+  const specialDeliveryProducts = cartItems.filter(item => item.requires_special_delivery);
+  if (specialDeliveryProducts.length > 0) {
+    shipping = settings.large_order_delivery_fee;
+  }
+  
+  // Apply free shipping threshold
+  if (subtotal >= settings.free_shipping_threshold) {
+    shipping = 0;
+  }
+  
   const total = subtotal + tax + shipping;
 
   return {

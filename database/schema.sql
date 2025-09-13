@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS products (
     stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0),
     image_url VARCHAR(500),
     is_active BOOLEAN DEFAULT true,
+    requires_special_delivery BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -289,6 +290,20 @@ CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);
 -- Create indexes for delivery zones
 CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);
 CREATE INDEX IF NOT EXISTS idx_delivery_zones_name ON delivery_zones(name);
+
+-- Application Settings Table (Singleton)
+CREATE TABLE IF NOT EXISTS app_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    tax_rate DECIMAL(5, 2) NOT NULL DEFAULT 10.00,
+    free_shipping_threshold DECIMAL(10, 2) NOT NULL DEFAULT 100.00,
+    large_order_quantity_threshold INTEGER NOT NULL DEFAULT 10,
+    large_order_delivery_fee DECIMAL(10, 2) NOT NULL DEFAULT 50.00,
+    pickup_address TEXT,
+    currency_symbol VARCHAR(5) NOT NULL DEFAULT '$',
+    currency_code VARCHAR(3) NOT NULL DEFAULT 'USD',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT single_row_check CHECK (id = 1)
+);
 
 -- Insert sample products
 INSERT INTO products (name, description, price, category, size, color, stock_quantity) VALUES
