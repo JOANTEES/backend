@@ -8,6 +8,8 @@ const pool = new Pool({
 
 async function migrate() {
   const statements = [
+    // --- Initial Setup ---
+    "CREATE EXTENSION IF NOT EXISTS citext;",
     // Users table additive columns
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100);",
@@ -15,6 +17,37 @@ async function migrate() {
 
     // Products table additive columns
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_special_delivery BOOLEAN DEFAULT false;",
+
+    // --- Refactor Cart to Order-Level Delivery (Robust Script) ---
+
+    // 1. Create the new 'carts' table. 'IF NOT EXISTS' makes it safe to re-run.
+    "CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE, delivery_method VARCHAR(20) DEFAULT 'delivery' CHECK (delivery_method IN ('pickup', 'delivery')), delivery_zone_id INTEGER REFERENCES delivery_zones(id) ON DELETE SET NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+
+    // 2. Add 'cart_id' to 'cart_items' if it doesn't exist.
+    "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS cart_id INTEGER REFERENCES carts(id) ON DELETE CASCADE;",
+
+    // 3. Conditionally migrate data ONLY IF the old 'user_id' column still exists on cart_items.
+    `DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cart_items' AND column_name='user_id') THEN
+            -- For each user in the old cart_items, create a single corresponding cart.
+            INSERT INTO carts (user_id)
+            SELECT DISTINCT user_id FROM cart_items
+            ON CONFLICT (user_id) DO NOTHING;
+
+            -- Link all of a user's cart items to their new single cart.
+            UPDATE cart_items ci SET cart_id = (SELECT id FROM carts c WHERE c.user_id = ci.user_id)
+            WHERE ci.cart_id IS NULL;
+        END IF;
+    END $$;`,
+
+    // 4. Safely drop the old columns from 'cart_items' if they exist.
+    "ALTER TABLE cart_items DROP COLUMN IF EXISTS delivery_method;",
+    "ALTER TABLE cart_items DROP COLUMN IF EXISTS delivery_zone_id;",
+
+    // --- Final Step ---
+    // The user_id column is the last one to be dropped after its data has been migrated.
+    "ALTER TABLE cart_items DROP COLUMN IF EXISTS user_id;",
 
     // Bookings table and indexes
     `CREATE TABLE IF NOT EXISTS bookings (
@@ -236,13 +269,11 @@ async function migrate() {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );`,
 
-    // Create indexes for cart tables
-    "CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);",
+    // --- Indexes for Cart and Delivery ---
+    "CREATE INDEX IF NOT EXISTS idx_cart_items_cart_id ON cart_items(cart_id);",
     "CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);",
-
-    // Create indexes for delivery zones
-    "CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);",
     "CREATE INDEX IF NOT EXISTS idx_delivery_zones_name ON delivery_zones(name);",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);",
 
     // Application Settings Table
     `CREATE TABLE IF NOT EXISTS app_settings (
@@ -264,10 +295,36 @@ async function migrate() {
 
   try {
     console.log("\n➡️  Running database migrations...");
-    for (const sql of statements) {
-      await pool.query(sql);
+
+    const client = await pool.connect();
+    try {
+      for (const statement of statements) {
+        // Skip empty or comment-only lines
+        if (!statement.trim() || statement.trim().startsWith("--")) {
+          continue;
+        }
+
+        const logStatement = statement.split("\n")[0].substring(0, 80) + "...";
+        console.log(`\nExecuting: ${logStatement}`);
+
+        try {
+          await client.query(statement);
+          console.log(`✅ SUCCESS`);
+        } catch (err) {
+          console.error(`❌ FAILED`);
+          console.error("   Error details:", err.message);
+          console.error("   Full Statement:", statement);
+          throw err; // Re-throw the error to stop the migration
+        }
+      }
+
+      console.log("\n✅ Migrations applied successfully.");
+    } catch (error) {
+      console.error("\n❌ Migration process failed. Halting.");
+      // The detailed error is already logged, so we can exit.
+    } finally {
+      client.release();
     }
-    console.log("✅ Migrations applied successfully.");
   } catch (err) {
     console.error("❌ Migration failed:", err.message);
     process.exitCode = 1;

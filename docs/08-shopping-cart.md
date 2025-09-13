@@ -7,7 +7,8 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
 - **Stock Management:** Stock quantity automatically reduces when adding to cart and restores when removing.
 - **Transaction Safety:** All operations use database transactions to ensure data consistency.
 - **Activity Logging:** All cart actions are logged in the customer's activity feed.
-- **Smart Totals:** The `GET /api/cart` endpoint automatically calculates subtotal, tax (currently 10%), and shipping (free over $100). These values will become dynamic after the admin settings are implemented.
+- **Smart Totals:** The `GET /api/cart` endpoint automatically calculates subtotal, tax, and shipping using dynamic admin settings. Tax rate, free shipping threshold, and large order handling are all configurable by admins.
+- **Order-Level Delivery Method:** Users choose delivery method (pickup or delivery) for the entire cart, not per item.
 - **Duplicate Prevention:** Adding the same product with the same size/color updates the quantity instead of creating a new entry.
 
 ### 1. Get User's Cart
@@ -20,22 +21,35 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
   {
     "success": true,
     "message": "Cart retrieved successfully",
-    "cart": {
+    "data": {
+      "cart": {
+        "id": "1",
+        "deliveryMethod": "delivery",
+        "deliveryZoneId": "1",
+        "deliveryZoneName": "East Legon",
+        "deliveryZoneFee": 15.0,
+        "createdAt": "2024-01-15T10:30:00.000Z",
+        "updatedAt": "2024-01-15T10:30:00.000Z"
+      },
       "items": [
         {
-          "itemId": "1",
+          "id": "1",
           "productId": "1",
-          "name": "Classic White T-Shirt",
+          "productName": "Classic White T-Shirt",
           "quantity": 2,
-          "price": "29.99",
+          "price": 29.99,
           "size": "M",
-          "color": "White"
+          "color": "White",
+          "subtotal": 59.98
         }
       ],
-      "subtotal": 59.98,
-      "tax": 6.0,
-      "shipping": 0.0,
-      "total": 65.98
+      "totals": {
+        "subtotal": 59.98,
+        "tax": 6.0,
+        "shipping": 15.0,
+        "total": 80.98
+      },
+      "itemCount": 1
     }
   }
   ```
@@ -65,7 +79,31 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
   }
   ```
 
-### 3. Update Cart Item Quantity
+### 3. Update Cart Delivery Method
+
+- **URL:** `PUT /api/cart/delivery`
+- **Description:** Updates the delivery method and zone for the entire cart.
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Request Body:**
+  ```json
+  {
+    "deliveryMethod": "delivery",
+    "deliveryZoneId": 1
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Cart delivery method updated successfully",
+    "data": {
+      "deliveryMethod": "delivery",
+      "deliveryZoneId": 1
+    }
+  }
+  ```
+
+### 4. Update Cart Item Quantity
 
 - **URL:** `PUT /api/cart/:itemId`
 - **Description:** Updates the quantity of a specific item in the cart.

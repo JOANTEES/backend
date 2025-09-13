@@ -243,17 +243,27 @@ CREATE TABLE IF NOT EXISTS purchase_history_items (
 
 -- Shopping Cart Tables
 
+-- Cart table for order-level delivery method
+CREATE TABLE IF NOT EXISTS carts (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+    delivery_method VARCHAR(20) DEFAULT 'delivery' CHECK (delivery_method IN ('pickup', 'delivery')),
+    delivery_zone_id INTEGER REFERENCES delivery_zones(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Cart items table
 CREATE TABLE IF NOT EXISTS cart_items (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    cart_id INTEGER REFERENCES carts(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     size VARCHAR(20),
     color VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, product_id, size, color)
+    UNIQUE(cart_id, product_id, size, color)
 );
 
 -- Delivery Zones Table

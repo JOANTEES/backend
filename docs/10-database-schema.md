@@ -26,14 +26,27 @@ Contains all product information for the catalog.
 - `color`: VARCHAR(50)
 - `stock_quantity`: INTEGER
 - `image_url`: VARCHAR(500)
+- `is_active`: BOOLEAN
+- `requires_special_delivery`: BOOLEAN
 - `created_at`: TIMESTAMP
+
+### `carts`
+
+Stores user cart information with order-level delivery method.
+
+- `id`: SERIAL PRIMARY KEY
+- `user_id`: INTEGER (Foreign Key to `users.id`)
+- `delivery_method`: VARCHAR(20) ('pickup' or 'delivery')
+- `delivery_zone_id`: INTEGER (Foreign Key to `delivery_zones.id`)
+- `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
 
 ### `cart_items`
 
 Stores items currently in a user's shopping cart.
 
 - `id`: SERIAL PRIMARY KEY
-- `user_id`: INTEGER (Foreign Key to `users.id`)
+- `cart_id`: INTEGER (Foreign Key to `carts.id`)
 - `product_id`: INTEGER (Foreign Key to `products.id`)
 - `quantity`: INTEGER
 - `size`: VARCHAR(20)
@@ -52,6 +65,20 @@ Stores delivery zone information and fees.
 - `coverage_areas`: TEXT[] (Array of strings)
 - `is_active`: BOOLEAN
 - `created_at`: TIMESTAMP
+
+### `app_settings`
+
+Stores application-wide business settings (singleton table).
+
+- `id`: INTEGER PRIMARY KEY (always 1)
+- `tax_rate`: DECIMAL(5, 2) (percentage)
+- `free_shipping_threshold`: DECIMAL(10, 2)
+- `large_order_quantity_threshold`: INTEGER
+- `large_order_delivery_fee`: DECIMAL(10, 2)
+- `pickup_address`: TEXT
+- `currency_symbol`: VARCHAR(5)
+- `currency_code`: VARCHAR(3)
+- `updated_at`: TIMESTAMP
 
 ### Customer Management Tables
 

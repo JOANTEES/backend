@@ -117,3 +117,52 @@ These endpoints allow admins to manage delivery zones and customers to view them
 - **Description:** Retrieve all delivery zones, including inactive ones.
 - **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
 - **Response (200):** A list of all delivery zone objects.
+
+---
+
+## Admin Settings System (Available Now)
+
+These endpoints allow admins to manage application-wide business settings.
+
+### 1. Get App Settings
+
+- **URL:** `GET /api/admin/settings`
+- **Description:** Retrieve current application settings.
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Settings retrieved successfully",
+    "settings": {
+      "id": 1,
+      "taxRate": 10.0,
+      "freeShippingThreshold": 100.0,
+      "largeOrderQuantityThreshold": 10,
+      "largeOrderDeliveryFee": 50.0,
+      "pickupAddress": "123 Main St, Accra",
+      "currencySymbol": "$",
+      "currencyCode": "USD",
+      "updatedAt": "2024-01-16T15:00:00.000Z"
+    }
+  }
+  ```
+
+### 2. Update App Settings
+
+- **URL:** `PUT /api/admin/settings`
+- **Description:** Update application settings.
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Request Body:**
+  ```json
+  {
+    "taxRate": 12.5,
+    "freeShippingThreshold": 150.0,
+    "largeOrderQuantityThreshold": 15,
+    "largeOrderDeliveryFee": 75.0,
+    "pickupAddress": "456 New St, Accra",
+    "currencySymbol": "₵",
+    "currencyCode": "GHS"
+  }
+  ```
+- **Response (200):** The updated settings object.
