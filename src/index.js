@@ -14,6 +14,7 @@ const userRoutes = require("./routes/users");
 const dashboardRoutes = require("./routes/dashboard");
 const bookingsRoutes = require("./routes/bookings");
 const paymentsRoutes = require("./routes/payments");
+const customersRoutes = require("./routes/customers");
 
 // Database connection
 const pool = new Pool({
@@ -46,6 +47,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/bookings", bookingsRoutes);
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/customers", customersRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -84,27 +86,6 @@ app.get("/db-test", async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`📱 Health check: http://localhost:${PORT}/health`);
-  console.log(`🏠 Home: http://localhost:${PORT}/`);
-  console.log(`🗄️  Database test: http://localhost:${PORT}/db-test`);
-  console.log(`🔐 Auth endpoints:`);
-  console.log(`   POST /api/auth/register - User registration`);
-  console.log(`   POST /api/auth/login - User login`);
-  console.log(`   GET /api/auth/profile - Get user profile`);
-  console.log(`🛍️  Product endpoints:`);
-  console.log(`   GET /api/products - List all products`);
-  console.log(`   GET /api/products/:id - Get single product by ID`);
-  console.log(`   POST /api/products - Create new product (admin only)`);
-  console.log(`   PUT /api/products/:id - Update product (admin only)`);
-  console.log(`   DELETE /api/products/:id - Delete product (admin only)`);
-  console.log(`👥 User endpoints:`);
-  console.log(`   GET /api/users - Get all users (admin only)`);
-  console.log(`   GET /api/users/:id - Get user by ID (admin only)`);
-});
-
 // Start server only if not in Vercel environment
 if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
   app.listen(PORT, () => {
@@ -123,6 +104,18 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(`👥 User endpoints:`);
     console.log(`   GET /api/users - Get all users (admin only)`);
     console.log(`   GET /api/users/:id - Get user by ID (admin only)`);
+    console.log(`👤 Customer endpoints:`);
+    console.log(`   GET /api/customers - Get all customers`);
+    console.log(`   GET /api/customers/:id - Get single customer`);
+    console.log(`   GET /api/customers/segments - Get customer segments`);
+    console.log(`   GET /api/customers/loyalty - Get loyalty programs`);
+    console.log(
+      `   GET /api/customers/communications - Get communication campaigns`
+    );
+    console.log(
+      `   GET /api/customers/:id/purchases - Get customer purchase history`
+    );
+    console.log(`   GET /api/customers/:id/activity - Get customer activity`);
   });
 }
 
