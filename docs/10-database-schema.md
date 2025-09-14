@@ -53,6 +53,26 @@ Stores items currently in a user's shopping cart.
 - `color`: VARCHAR(50)
 - `created_at`: TIMESTAMP
 
+### `ghana_regions`
+
+Stores all 16 regions of Ghana for structured address selection.
+
+- `id`: SERIAL PRIMARY KEY
+- `name`: VARCHAR(100) UNIQUE
+- `code`: VARCHAR(10) UNIQUE
+- `is_active`: BOOLEAN
+- `created_at`: TIMESTAMP
+
+### `ghana_cities`
+
+Stores major cities for each region.
+
+- `id`: SERIAL PRIMARY KEY
+- `region_id`: INTEGER (Foreign Key to `ghana_regions.id`)
+- `name`: VARCHAR(100)
+- `is_active`: BOOLEAN
+- `created_at`: TIMESTAMP
+
 ### `delivery_zones`
 
 Stores delivery zone information and fees.
@@ -64,6 +84,17 @@ Stores delivery zone information and fees.
 - `estimated_days`: VARCHAR(50)
 - `coverage_areas`: TEXT[] (Array of strings)
 - `is_active`: BOOLEAN
+- `created_at`: TIMESTAMP
+
+### `delivery_zone_areas`
+
+Stores structured area coverage for each delivery zone.
+
+- `id`: SERIAL PRIMARY KEY
+- `delivery_zone_id`: INTEGER (Foreign Key to `delivery_zones.id`)
+- `region_id`: INTEGER (Foreign Key to `ghana_regions.id`)
+- `city_id`: INTEGER (Foreign Key to `ghana_cities.id`)
+- `area_name`: VARCHAR(100)
 - `created_at`: TIMESTAMP
 
 ### `app_settings`

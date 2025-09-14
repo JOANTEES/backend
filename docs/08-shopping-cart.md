@@ -103,7 +103,53 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
   }
   ```
 
-### 4. Update Cart Item Quantity
+### 4. Set Delivery Address (Auto-Determine Zone)
+
+- **URL:** `PUT /api/cart/delivery-address`
+- **Description:** Sets the delivery address and automatically determines the correct delivery zone based on the address.
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Request Body:**
+  ```json
+  {
+    "regionId": 1,
+    "cityId": 1,
+    "areaName": "East Legon"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Delivery address set and zone determined automatically.",
+    "data": {
+      "cart": {
+        "id": "1",
+        "deliveryMethod": "delivery",
+        "deliveryZoneId": "1",
+        "deliveryZoneName": "Accra North",
+        "deliveryZoneFee": 20.0
+      },
+      "items": [...],
+      "totals": {...},
+      "itemCount": 2,
+      "determinedZone": {
+        "id": "1",
+        "name": "Accra North",
+        "deliveryFee": 20.0,
+        "estimatedDays": "1-2 days"
+      }
+    }
+  }
+  ```
+- **Response (400):**
+  ```json
+  {
+    "success": false,
+    "message": "No delivery zone found for the specified address. Please contact support."
+  }
+  ```
+
+### 5. Update Cart Item Quantity
 
 - **URL:** `PUT /api/cart/:itemId`
 - **Description:** Updates the quantity of a specific item in the cart.
@@ -126,7 +172,7 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
   }
   ```
 
-### 4. Remove Item from Cart
+### 6. Remove Item from Cart
 
 - **URL:** `DELETE /api/cart/:itemId`
 - **Description:** Removes a single item from the cart.
@@ -140,7 +186,7 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
   }
   ```
 
-### 5. Clear Entire Cart
+### 7. Clear Entire Cart
 
 - **URL:** `DELETE /api/cart/clear`
 - **Description:** Removes all items from the user's cart.

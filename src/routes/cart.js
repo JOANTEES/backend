@@ -109,6 +109,44 @@ async function getCartData(userId) {
   };
 }
 
+// Helper function to automatically determine delivery zone based on address
+async function determineDeliveryZone(regionId, cityId, areaName) {
+  try {
+    const result = await pool.query(
+      `
+      SELECT 
+        dz.id, 
+        dz.name, 
+        dz.delivery_fee, 
+        dz.estimated_days
+      FROM delivery_zones dz
+      JOIN delivery_zone_areas dza ON dz.id = dza.delivery_zone_id
+      WHERE dz.is_active = true 
+        AND dza.region_id = $1 
+        AND dza.city_id = $2 
+        AND dza.area_name = $3
+      LIMIT 1
+    `,
+      [regionId, cityId, areaName]
+    );
+
+    if (result.rows.length > 0) {
+      const zone = result.rows[0];
+      return {
+        id: zone.id.toString(),
+        name: zone.name,
+        deliveryFee: parseFloat(zone.delivery_fee),
+        estimatedDays: zone.estimated_days,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error determining delivery zone:", error);
+    return null;
+  }
+}
+
 // Helper function to calculate all cart totals based on items, settings, and delivery choices
 async function calculateCartTotals(cartData) {
   const settings = await getAppSettings();
@@ -324,6 +362,75 @@ router.put(
       });
     } catch (error) {
       console.error("Error updating delivery method:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Internal server error" });
+    }
+  }
+);
+
+// PUT /api/cart/delivery-address - Set delivery address and automatically determine zone
+router.put(
+  "/delivery-address",
+  authenticateUser,
+  [
+    body("regionId")
+      .isInt({ min: 1 })
+      .withMessage("Valid region ID is required."),
+    body("cityId").isInt({ min: 1 }).withMessage("Valid city ID is required."),
+    body("areaName")
+      .notEmpty()
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Area name is required."),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { regionId, cityId, areaName } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // Determine the delivery zone automatically
+      const deliveryZone = await determineDeliveryZone(
+        regionId,
+        cityId,
+        areaName
+      );
+
+      if (!deliveryZone) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "No delivery zone found for the specified address. Please contact support.",
+        });
+      }
+
+      // Update the cart with delivery method and zone
+      const cart = await getOrCreateCart(userId);
+      await pool.query(
+        "UPDATE carts SET delivery_method = 'delivery', delivery_zone_id = $1 WHERE id = $2",
+        [deliveryZone.id, cart.id]
+      );
+
+      const cartData = await getCartData(userId);
+      const totals = await calculateCartTotals(cartData);
+
+      res.json({
+        success: true,
+        message: "Delivery address set and zone determined automatically.",
+        data: {
+          ...cartData,
+          totals,
+          itemCount: cartData.items.length,
+          determinedZone: deliveryZone,
+        },
+      });
+    } catch (error) {
+      console.error("Error setting delivery address:", error);
       res
         .status(500)
         .json({ success: false, message: "Internal server error" });

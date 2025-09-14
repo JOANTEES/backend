@@ -18,6 +18,9 @@ const customersRoutes = require("./routes/customers");
 const cartRoutes = require("./routes/cart");
 const deliveryZonesRoutes = require("./routes/delivery-zones");
 const adminSettingsRoutes = require("./routes/admin-settings");
+const ghanaLocationsRoutes = require("./routes/ghana-locations");
+const pickupLocationsRoutes = require("./routes/pickup-locations");
+const customerAddressesRoutes = require("./routes/customer-addresses");
 
 // Database connection
 const pool = new Pool({
@@ -54,6 +57,9 @@ app.use("/api/customers", customersRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/delivery-zones", deliveryZonesRoutes);
 app.use("/api/admin/settings", adminSettingsRoutes);
+app.use("/api/ghana", ghanaLocationsRoutes);
+app.use("/api/pickup-locations", pickupLocationsRoutes);
+app.use("/api/customer-addresses", customerAddressesRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -146,6 +152,42 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(`⚙️  Admin settings endpoints:`);
     console.log(`   GET /api/admin/settings - Get app settings`);
     console.log(`   PUT /api/admin/settings - Update app settings`);
+    console.log(`🇬🇭 Ghana locations endpoints:`);
+    console.log(`   GET /api/ghana/regions - Get all Ghana regions`);
+    console.log(
+      `   GET /api/ghana/cities - Get all cities or cities by region`
+    );
+    console.log(
+      `   GET /api/ghana/cities/:regionId - Get cities by specific region`
+    );
+    console.log(`📍 Pickup locations endpoints:`);
+    console.log(
+      `   GET /api/pickup-locations - Get all active pickup locations`
+    );
+    console.log(
+      `   GET /api/pickup-locations/:id - Get single pickup location`
+    );
+    console.log(
+      `   POST /api/pickup-locations - Create pickup location (admin only)`
+    );
+    console.log(
+      `   PUT /api/pickup-locations/:id - Update pickup location (admin only)`
+    );
+    console.log(
+      `   DELETE /api/pickup-locations/:id - Delete pickup location (admin only)`
+    );
+    console.log(
+      `   GET /api/pickup-locations/admin - Get all locations including inactive (admin only)`
+    );
+    console.log(`🏠 Customer addresses endpoints:`);
+    console.log(`   GET /api/customer-addresses - Get user's addresses`);
+    console.log(`   GET /api/customer-addresses/:id - Get single address`);
+    console.log(`   POST /api/customer-addresses - Create new address`);
+    console.log(`   PUT /api/customer-addresses/:id - Update address`);
+    console.log(`   DELETE /api/customer-addresses/:id - Delete address`);
+    console.log(
+      `   PUT /api/customer-addresses/:id/set-default - Set address as default`
+    );
   });
 }
 

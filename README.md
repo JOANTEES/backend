@@ -21,7 +21,9 @@ For detailed information on API endpoints, data models, and usage, please refer 
 9.  [**Order & Delivery System**](./docs/09-order-management.md)
 10. [**Database Schema**](./docs/10-database-schema.md)
 11. [**Deployment**](./docs/11-deployment.md)
-12. [**Roadmap & Next Steps**](./docs/12-next-steps.md)
+12. [**Ghana Locations**](./docs/13-ghana-locations.md)
+13. [**Address Management**](./docs/14-address-management.md)
+14. [**Roadmap & Next Steps**](./docs/12-next-steps.md)
 
 ## 🚀 Getting Started
 

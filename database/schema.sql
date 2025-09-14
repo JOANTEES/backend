@@ -171,16 +171,37 @@ CREATE TABLE IF NOT EXISTS customer_loyalty (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Customer addresses table
+-- Pickup locations table (admin managed)
+CREATE TABLE IF NOT EXISTS pickup_locations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    region_id INTEGER REFERENCES ghana_regions(id) ON DELETE CASCADE,
+    city_id INTEGER REFERENCES ghana_cities(id) ON DELETE CASCADE,
+    area_name VARCHAR(100) NOT NULL,
+    landmark VARCHAR(255),
+    additional_instructions TEXT,
+    contact_phone VARCHAR(30),
+    contact_email VARCHAR(255),
+    operating_hours JSONB,
+    is_active BOOLEAN DEFAULT true,
+    google_maps_link TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Customer addresses table (updated to use Ghana structure)
 CREATE TABLE IF NOT EXISTS customer_addresses (
     id SERIAL PRIMARY KEY,
     customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    street VARCHAR(255) NOT NULL,
-    city VARCHAR(100) NOT NULL,
-    state VARCHAR(100) NOT NULL,
-    zip_code VARCHAR(20) NOT NULL,
-    country VARCHAR(100) NOT NULL,
+    region_id INTEGER REFERENCES ghana_regions(id) ON DELETE CASCADE,
+    city_id INTEGER REFERENCES ghana_cities(id) ON DELETE CASCADE,
+    area_name VARCHAR(100) NOT NULL,
+    landmark VARCHAR(255),
+    additional_instructions TEXT,
+    contact_phone VARCHAR(30),
     is_default BOOLEAN DEFAULT false,
+    google_maps_link TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -266,6 +287,25 @@ CREATE TABLE IF NOT EXISTS cart_items (
     UNIQUE(cart_id, product_id, size, color)
 );
 
+-- Ghana Regions (Fixed list of 16 regions)
+CREATE TABLE IF NOT EXISTS ghana_regions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    code VARCHAR(10) NOT NULL UNIQUE,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ghana Cities (Major cities for each region)
+CREATE TABLE IF NOT EXISTS ghana_cities (
+    id SERIAL PRIMARY KEY,
+    region_id INTEGER REFERENCES ghana_regions(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(region_id, name)
+);
+
 -- Delivery Zones Table
 CREATE TABLE IF NOT EXISTS delivery_zones (
     id SERIAL PRIMARY KEY,
@@ -279,13 +319,27 @@ CREATE TABLE IF NOT EXISTS delivery_zones (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Delivery Zone Areas (Structured coverage areas for each zone)
+CREATE TABLE IF NOT EXISTS delivery_zone_areas (
+    id SERIAL PRIMARY KEY,
+    delivery_zone_id INTEGER REFERENCES delivery_zones(id) ON DELETE CASCADE,
+    region_id INTEGER REFERENCES ghana_regions(id) ON DELETE CASCADE,
+    city_id INTEGER REFERENCES ghana_cities(id) ON DELETE CASCADE,
+    area_name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(delivery_zone_id, region_id, city_id, area_name)
+);
+
 -- Create indexes for customer management tables
 CREATE INDEX IF NOT EXISTS idx_customer_segments_name ON customer_segments(name);
 CREATE INDEX IF NOT EXISTS idx_loyalty_programs_active ON loyalty_programs(is_active);
 CREATE INDEX IF NOT EXISTS idx_communication_campaigns_status ON communication_campaigns(status);
 CREATE INDEX IF NOT EXISTS idx_customer_preferences_customer_id ON customer_preferences(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_loyalty_customer_id ON customer_loyalty(customer_id);
+CREATE INDEX IF NOT EXISTS idx_pickup_locations_active ON pickup_locations(is_active);
+CREATE INDEX IF NOT EXISTS idx_pickup_locations_region_city ON pickup_locations(region_id, city_id);
 CREATE INDEX IF NOT EXISTS idx_customer_addresses_customer_id ON customer_addresses(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_addresses_region_city ON customer_addresses(region_id, city_id);
 CREATE INDEX IF NOT EXISTS idx_customer_tags_customer_id ON customer_tags(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_activity_customer_id ON customer_activity(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_activity_type ON customer_activity(type);
@@ -296,6 +350,13 @@ CREATE INDEX IF NOT EXISTS idx_purchase_history_items_purchase_id ON purchase_hi
 -- Create indexes for cart tables
 CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);
+
+-- Create indexes for Ghana regions and cities
+CREATE INDEX IF NOT EXISTS idx_ghana_regions_active ON ghana_regions(is_active);
+CREATE INDEX IF NOT EXISTS idx_ghana_cities_region_id ON ghana_cities(region_id);
+CREATE INDEX IF NOT EXISTS idx_ghana_cities_active ON ghana_cities(is_active);
+CREATE INDEX IF NOT EXISTS idx_delivery_zone_areas_zone_id ON delivery_zone_areas(delivery_zone_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_zone_areas_region_city ON delivery_zone_areas(region_id, city_id);
 
 -- Create indexes for delivery zones
 CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);
@@ -321,3 +382,107 @@ INSERT INTO products (name, description, price, category, size, color, stock_qua
 ('Denim Jeans', 'Comfortable straight-leg denim jeans', 79.99, 'Jeans', '32', 'Blue', 30),
 ('Hooded Sweatshirt', 'Warm and cozy hooded sweatshirt', 59.99, 'Hoodies', 'L', 'Gray', 25)
 ON CONFLICT DO NOTHING;
+
+-- Insert Ghana Regions (16 regions)
+INSERT INTO ghana_regions (name, code) VALUES
+('Greater Accra', 'GA'),
+('Ashanti', 'AS'),
+('Western', 'WE'),
+('Eastern', 'EA'),
+('Volta', 'VO'),
+('Central', 'CE'),
+('Northern', 'NO'),
+('Upper East', 'UE'),
+('Upper West', 'UW'),
+('Brong-Ahafo', 'BA'),
+('Western North', 'WN'),
+('Ahafo', 'AH'),
+('Bono', 'BO'),
+('Bono East', 'BE'),
+('Oti', 'OT'),
+('Savannah', 'SA')
+ON CONFLICT (code) DO NOTHING;
+
+-- Insert major cities for each region
+INSERT INTO ghana_cities (region_id, name) VALUES
+-- Greater Accra
+(1, 'Accra'),
+(1, 'Tema'),
+(1, 'Madina'),
+(1, 'Adenta'),
+-- Ashanti
+(2, 'Kumasi'),
+(2, 'Obuasi'),
+(2, 'Ejisu'),
+(2, 'Konongo'),
+-- Western
+(3, 'Takoradi'),
+(3, 'Sekondi'),
+(3, 'Tarkwa'),
+(3, 'Prestea'),
+-- Eastern
+(4, 'Koforidua'),
+(4, 'Nkawkaw'),
+(4, 'Mpraeso'),
+(4, 'Begoro'),
+-- Volta
+(5, 'Ho'),
+(5, 'Keta'),
+(5, 'Hohoe'),
+(5, 'Kpando'),
+-- Central
+(6, 'Cape Coast'),
+(6, 'Kasoa'),
+(6, 'Winneba'),
+(6, 'Swedru'),
+-- Northern
+(7, 'Tamale'),
+(7, 'Yendi'),
+(7, 'Savelugu'),
+(7, 'Tolon'),
+-- Upper East
+(8, 'Bolgatanga'),
+(8, 'Navrongo'),
+(8, 'Bawku'),
+(8, 'Paga'),
+-- Upper West
+(9, 'Wa'),
+(9, 'Lawra'),
+(9, 'Jirapa'),
+(9, 'Nandom'),
+-- Brong-Ahafo
+(10, 'Sunyani'),
+(10, 'Techiman'),
+(10, 'Berekum'),
+(10, 'Bechem'),
+-- Western North
+(11, 'Sefwi Wiawso'),
+(11, 'Bibiani'),
+(11, 'Juaboso'),
+(11, 'Aowin'),
+-- Ahafo
+(12, 'Goaso'),
+(12, 'Bechem'),
+(12, 'Hwidiem'),
+(12, 'Kenyasi'),
+-- Bono
+(13, 'Sunyani'),
+(13, 'Berekum'),
+(13, 'Dormaa Ahenkro'),
+(13, 'Wenchi'),
+-- Bono East
+(14, 'Techiman'),
+(14, 'Atebubu'),
+(14, 'Nkoranza'),
+(14, 'Kintampo'),
+-- Oti
+(15, 'Dambai'),
+(15, 'Kete Krachi'),
+(15, 'Nkwanta'),
+(15, 'Kadjebi'),
+-- Savannah
+(16, 'Damongo'),
+(16, 'Bole'),
+(16, 'Salaga'),
+(16, 'Sawla')
+ON CONFLICT (region_id, name) DO NOTHING;
