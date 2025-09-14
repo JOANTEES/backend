@@ -60,7 +60,8 @@ async function getCartData(userId) {
     `SELECT
       ci.id, ci.quantity, ci.size, ci.color, ci.created_at,
       p.id AS product_id, p.name AS product_name, p.description, p.price,
-      p.category, p.image_url, p.stock_quantity, p.requires_special_delivery
+      p.category, p.image_url, p.stock_quantity, p.requires_special_delivery,
+      p.delivery_eligible, p.pickup_eligible
     FROM cart_items ci
     JOIN products p ON ci.product_id = p.id
     WHERE ci.cart_id = $1 AND p.is_active = true
@@ -103,6 +104,8 @@ async function getCartData(userId) {
       imageUrl: item.image_url,
       stockQuantity: item.stock_quantity,
       requiresSpecialDelivery: item.requires_special_delivery,
+      deliveryEligible: item.delivery_eligible,
+      pickupEligible: item.pickup_eligible,
       subtotal: parseFloat(item.price) * item.quantity,
       createdAt: item.created_at,
     })),
@@ -156,6 +159,36 @@ async function calculateCartTotals(cartData) {
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
   const tax = subtotal * (settings.tax_rate / 100);
 
+  // Check delivery eligibility
+  const deliveryEligibilityIssues = [];
+  if (cart.deliveryMethod === "delivery") {
+    const notDeliveryEligible = items.filter((item) => !item.deliveryEligible);
+    if (notDeliveryEligible.length > 0) {
+      deliveryEligibilityIssues.push({
+        type: "not_delivery_eligible",
+        message: "Some items are not available for delivery",
+        items: notDeliveryEligible.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          message: "This item is not available for delivery",
+        })),
+      });
+    }
+  } else if (cart.deliveryMethod === "pickup") {
+    const notPickupEligible = items.filter((item) => !item.pickupEligible);
+    if (notPickupEligible.length > 0) {
+      deliveryEligibilityIssues.push({
+        type: "not_pickup_eligible",
+        message: "Some items are not available for pickup",
+        items: notPickupEligible.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          message: "This item is not available for pickup",
+        })),
+      });
+    }
+  }
+
   let shipping = 0;
   if (cart.deliveryMethod === "delivery") {
     const hasSpecialDelivery = items.some(
@@ -182,6 +215,8 @@ async function calculateCartTotals(cartData) {
     tax: parseFloat(tax.toFixed(2)),
     shipping: parseFloat(shipping.toFixed(2)),
     total: parseFloat(total.toFixed(2)),
+    deliveryEligibilityIssues:
+      deliveryEligibilityIssues.length > 0 ? deliveryEligibilityIssues : null,
   };
 }
 

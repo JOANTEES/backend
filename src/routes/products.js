@@ -16,7 +16,7 @@ const pool = new Pool({
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, name, description, price, category, size, color, stock_quantity, image_url, created_at FROM products WHERE is_active = true ORDER BY created_at DESC"
+      "SELECT id, name, description, price, category, size, color, stock_quantity, image_url, requires_special_delivery, delivery_eligible, pickup_eligible, created_at FROM products WHERE is_active = true ORDER BY created_at DESC"
     );
 
     res.json({
@@ -48,7 +48,7 @@ router.get("/:id", async (req, res) => {
     }
 
     const result = await pool.query(
-      "SELECT id, name, description, price, category, size, color, stock_quantity, image_url, created_at FROM products WHERE id = $1 AND is_active = true",
+      "SELECT id, name, description, price, category, size, color, stock_quantity, image_url, requires_special_delivery, delivery_eligible, pickup_eligible, created_at FROM products WHERE id = $1 AND is_active = true",
       [productId]
     );
 
@@ -87,6 +87,9 @@ router.post(
     body("color").optional().trim(),
     body("stock_quantity").isInt({ min: 0 }),
     body("image_url").optional().isURL(),
+    body("requires_special_delivery").optional().isBoolean(),
+    body("delivery_eligible").optional().isBoolean(),
+    body("pickup_eligible").optional().isBoolean(),
   ],
   async (req, res) => {
     try {
@@ -109,11 +112,14 @@ router.post(
         color,
         stock_quantity,
         image_url,
+        requires_special_delivery = false,
+        delivery_eligible = true,
+        pickup_eligible = true,
       } = req.body;
 
       // Create new product
       const newProduct = await pool.query(
-        "INSERT INTO products (name, description, price, category, size, color, stock_quantity, image_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name, description, price, category, size, color, stock_quantity, image_url, created_at",
+        "INSERT INTO products (name, description, price, category, size, color, stock_quantity, image_url, requires_special_delivery, delivery_eligible, pickup_eligible) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, name, description, price, category, size, color, stock_quantity, image_url, requires_special_delivery, delivery_eligible, pickup_eligible, created_at",
         [
           name,
           description,
@@ -123,6 +129,9 @@ router.post(
           color,
           stock_quantity,
           image_url,
+          requires_special_delivery,
+          delivery_eligible,
+          pickup_eligible,
         ]
       );
 
@@ -153,6 +162,9 @@ router.put(
     body("color").optional().trim(),
     body("stock_quantity").optional().isInt({ min: 0 }),
     body("image_url").optional().isURL(),
+    body("requires_special_delivery").optional().isBoolean(),
+    body("delivery_eligible").optional().isBoolean(),
+    body("pickup_eligible").optional().isBoolean(),
   ],
   async (req, res) => {
     try {
@@ -183,6 +195,9 @@ router.put(
         color,
         stock_quantity,
         image_url,
+        requires_special_delivery,
+        delivery_eligible,
+        pickup_eligible,
       } = req.body;
 
       // Check if product exists
@@ -234,6 +249,18 @@ router.put(
       if (image_url !== undefined) {
         updateFields.push(`image_url = $${paramCount++}`);
         updateValues.push(image_url);
+      }
+      if (requires_special_delivery !== undefined) {
+        updateFields.push(`requires_special_delivery = $${paramCount++}`);
+        updateValues.push(requires_special_delivery);
+      }
+      if (delivery_eligible !== undefined) {
+        updateFields.push(`delivery_eligible = $${paramCount++}`);
+        updateValues.push(delivery_eligible);
+      }
+      if (pickup_eligible !== undefined) {
+        updateFields.push(`pickup_eligible = $${paramCount++}`);
+        updateValues.push(pickup_eligible);
       }
 
       // Add updated_at timestamp

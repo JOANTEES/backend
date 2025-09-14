@@ -9,6 +9,7 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
 - **Activity Logging:** All cart actions are logged in the customer's activity feed.
 - **Smart Totals:** The `GET /api/cart` endpoint automatically calculates subtotal, tax, and shipping using dynamic admin settings. Tax rate, free shipping threshold, and large order handling are all configurable by admins.
 - **Order-Level Delivery Method:** Users choose delivery method (pickup or delivery) for the entire cart, not per item.
+- **Delivery Eligibility Validation:** Cart validates that all items support the selected delivery method. Items can be marked as delivery-only, pickup-only, or both.
 - **Duplicate Prevention:** Adding the same product with the same size/color updates the quantity instead of creating a new entry.
 
 ### 1. Get User's Cart
@@ -40,6 +41,9 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
           "price": 29.99,
           "size": "M",
           "color": "White",
+          "deliveryEligible": true,
+          "pickupEligible": true,
+          "requiresSpecialDelivery": false,
           "subtotal": 59.98
         }
       ],
@@ -47,12 +51,53 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
         "subtotal": 59.98,
         "tax": 6.0,
         "shipping": 15.0,
-        "total": 80.98
+        "total": 80.98,
+        "deliveryEligibilityIssues": null
       },
       "itemCount": 1
     }
   }
   ```
+
+#### Delivery Eligibility Validation
+
+The cart system automatically validates that all items support the selected delivery method:
+
+- **When `deliveryEligibilityIssues` is `null`:** All items in the cart are compatible with the selected delivery method.
+- **When `deliveryEligibilityIssues` contains issues:** Some items are not compatible with the selected delivery method.
+
+**Example of delivery eligibility issues:**
+
+```json
+{
+  "totals": {
+    "subtotal": 59.98,
+    "tax": 6.0,
+    "shipping": 15.0,
+    "total": 80.98,
+    "deliveryEligibilityIssues": [
+      {
+        "type": "not_delivery_eligible",
+        "message": "Some items are not available for delivery",
+        "items": [
+          {
+            "productId": "2",
+            "productName": "Fragile Glass Vase",
+            "message": "This item is not available for delivery"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Frontend should:**
+
+1. Check for `deliveryEligibilityIssues` in the cart response
+2. Display warnings to users about incompatible items
+3. Suggest switching delivery method or removing incompatible items
+4. Prevent order creation when there are eligibility issues
 
 ### 2. Add Item to Cart
 

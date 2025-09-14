@@ -2,26 +2,221 @@
 
 This section covers endpoints related to order processing and delivery management.
 
-## Order Management (Coming Soon)
+## Order Management System
 
-The order management system is currently under development.
+The order management system supports 4 payment/delivery combinations with comprehensive order tracking and management.
 
-#### Planned Order Endpoints:
+### Order Creation
 
-- `POST /api/orders` - Create order from cart
-- `GET /api/orders` - Get a user's order history
-- `GET /api/orders/:id` - Get details for a single order
-- `GET /api/orders/admin` - Get all orders (admin)
-- `PUT /api/orders/:id/status` - Update order status (admin)
+#### Create Order from Cart
 
-#### Planned Features:
+- **URL:** `POST /api/orders`
+- **Description:** Create a new order from the user's cart with support for 4 payment/delivery combinations. Validates that all cart items support the selected delivery method.
+- **Headers:** `Authorization: Bearer <token>`
+- **Request Body:**
+  ```json
+  {
+    "paymentMethod": "online", // "online", "on_delivery", "on_pickup"
+    "deliveryMethod": "delivery", // "delivery", "pickup"
+    "deliveryAddressId": 1, // Required for delivery
+    "pickupLocationId": 1, // Required for pickup
+    "customerNotes": "Please call before delivery"
+  }
+  ```
+- **Response (201):**
+  ```json
+  {
+    "success": true,
+    "message": "Order created successfully",
+    "order": {
+      "id": "1",
+      "orderNumber": "ORD-123456-001",
+      "status": "pending",
+      "paymentMethod": "online",
+      "paymentStatus": "pending",
+      "deliveryMethod": "delivery",
+      "deliveryAddress": {
+        "regionId": "1",
+        "regionName": "Greater Accra",
+        "cityId": "1",
+        "cityName": "Tema",
+        "areaName": "Kpone",
+        "landmark": "Near Top Oil Kpone",
+        "additionalInstructions": "Call when you arrive",
+        "contactPhone": "+233123456789",
+        "googleMapsLink": "https://www.google.com/maps/search/?api=1&query=..."
+      },
+      "pickupLocation": null,
+      "totals": {
+        "subtotal": 100.0,
+        "taxAmount": 10.0,
+        "shippingFee": 20.0,
+        "largeOrderFee": 0.0,
+        "specialDeliveryFee": 0.0,
+        "totalAmount": 130.0
+      },
+      "customerNotes": "Please call before delivery",
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  }
+  ```
 
-- **Dynamic Calculations:** Use admin-defined settings for tax, shipping, and free shipping.
-- **Payment Options:** Support for online payments and Cash on Delivery.
-- **Pickup Option:** Allow users to select free pickup from a store location.
-- **Address Collection:** A landmark-based address system tailored for Ghana.
-- **Google Maps Integration:** Automatic generation of map links for delivery.
-- **Order Tracking:** Real-time status updates from `pending` to `delivered`.
+**Error Response (400) - Delivery Eligibility Issues:**
+
+```json
+{
+  "success": false,
+  "message": "Delivery method not compatible with cart items",
+  "deliveryEligibilityIssues": [
+    {
+      "type": "not_delivery_eligible",
+      "message": "Some items in your cart are not available for delivery",
+      "items": [
+        {
+          "productId": 2,
+          "productName": "Fragile Glass Vase",
+          "message": "This item is not available for delivery"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Order Retrieval
+
+#### Get User's Orders
+
+- **URL:** `GET /api/orders`
+- **Description:** Retrieve user's order history with optional filtering
+- **Headers:** `Authorization: Bearer <token>`
+- **Query Parameters:**
+  - `status` (optional): Filter by order status
+  - `page` (optional): Page number (default: 1)
+  - `limit` (optional): Items per page (default: 10)
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Orders retrieved successfully",
+    "count": 2,
+    "orders": [
+      {
+        "id": "1",
+        "orderNumber": "ORD-123456-001",
+        "status": "pending",
+        "paymentMethod": "online",
+        "paymentStatus": "pending",
+        "deliveryMethod": "delivery",
+        "deliveryAddress": {
+          /* address object */
+        },
+        "pickupLocationName": null,
+        "deliveryZoneName": "Accra North",
+        "totals": {
+          /* totals object */
+        },
+        "customerNotes": "Please call before delivery",
+        "createdAt": "2024-01-15T10:30:00.000Z",
+        "updatedAt": null,
+        "confirmedAt": null,
+        "shippedAt": null,
+        "deliveredAt": null
+      }
+    ]
+  }
+  ```
+
+#### Get Single Order
+
+- **URL:** `GET /api/orders/:id`
+- **Description:** Get detailed information for a single order including all items
+- **Headers:** `Authorization: Bearer <token>`
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Order retrieved successfully",
+    "order": {
+      "id": "1",
+      "orderNumber": "ORD-123456-001",
+      "status": "pending",
+      "paymentMethod": "online",
+      "paymentStatus": "pending",
+      "deliveryMethod": "delivery",
+      "deliveryAddress": {
+        /* full address object */
+      },
+      "pickupLocation": null,
+      "deliveryZone": {
+        "id": "1",
+        "name": "Accra North",
+        "deliveryFee": 20.0
+      },
+      "totals": {
+        /* complete totals breakdown */
+      },
+      "customerNotes": "Please call before delivery",
+      "notes": null,
+      "estimatedDeliveryDate": null,
+      "actualDeliveryDate": null,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": null,
+      "confirmedAt": null,
+      "shippedAt": null,
+      "deliveredAt": null,
+      "items": [
+        {
+          "id": "1",
+          "productId": "1",
+          "productName": "Classic White T-Shirt",
+          "productDescription": "Premium cotton classic fit t-shirt",
+          "productImageUrl": "https://example.com/image.jpg",
+          "size": "M",
+          "color": "White",
+          "quantity": 2,
+          "unitPrice": 29.99,
+          "subtotal": 59.98,
+          "requiresSpecialDelivery": false,
+          "currentProductName": "Classic White T-Shirt",
+          "currentImageUrl": "https://example.com/image.jpg"
+        }
+      ]
+    }
+  }
+  ```
+
+### Order Status Flow
+
+The system supports the following order statuses:
+
+1. **pending** - Order created, awaiting confirmation
+2. **confirmed** - Order confirmed by admin
+3. **processing** - Order being prepared
+4. **ready_for_pickup** - Order ready for customer pickup
+5. **shipped** - Order shipped for delivery
+6. **out_for_delivery** - Order out for delivery
+7. **delivered** - Order successfully delivered
+8. **cancelled** - Order cancelled
+9. **refunded** - Order refunded
+
+### Payment & Delivery Combinations
+
+The system supports 4 combinations:
+
+1. **Pay Online + Delivery** - Customer pays instantly, gets delivery
+2. **Pay Online + Pickup** - Customer pays instantly, picks up from store
+3. **Pay on Delivery + Delivery** - Customer pays when item arrives
+4. **Pay on Delivery + Pickup** - Customer pays when picking up
+
+### Order Features
+
+- **Dynamic Calculations:** Uses admin-defined settings for tax, shipping, and free shipping
+- **Stock Management:** Automatically reduces product stock on order creation
+- **Product Snapshots:** Preserves product details at time of order
+- **Transaction Safety:** Database transactions ensure data consistency
+- **Address Integration:** Works with customer addresses and pickup locations
+- **Google Maps Links:** Automatic generation for delivery addresses
 
 ---
 

@@ -2,6 +2,21 @@
 
 These endpoints handle the management of products and product categories.
 
+### Product Delivery Options
+
+Products can be configured with specific delivery eligibility:
+
+- **`delivery_eligible`** (boolean, default: true): Whether the product can be delivered to customers
+- **`pickup_eligible`** (boolean, default: true): Whether the product can be picked up by customers
+- **`requires_special_delivery`** (boolean, default: false): Whether the product requires special delivery handling (affects shipping costs)
+
+**Common configurations:**
+
+- **Both delivery and pickup:** `delivery_eligible: true, pickup_eligible: true` (default)
+- **Pickup only:** `delivery_eligible: false, pickup_eligible: true` (fragile items, large items)
+- **Delivery only:** `delivery_eligible: true, pickup_eligible: false` (digital products, services)
+- **Special delivery:** `requires_special_delivery: true` (large items, fragile items)
+
 ### 1. Get All Products
 
 - **URL:** `GET /api/products`
@@ -24,6 +39,9 @@ These endpoints handle the management of products and product categories.
         "color": "White",
         "stock_quantity": 50,
         "image_url": null,
+        "requires_special_delivery": false,
+        "delivery_eligible": true,
+        "pickup_eligible": true,
         "created_at": "2024-01-16T10:00:00.000Z"
       }
     ]
@@ -63,7 +81,11 @@ These endpoints handle the management of products and product categories.
     "category": "New Category",
     "size": "L",
     "color": "Black",
-    "stock_quantity": 100
+    "stock_quantity": 100,
+    "image_url": "https://example.com/image.jpg",
+    "requires_special_delivery": false,
+    "delivery_eligible": true,
+    "pickup_eligible": true
   }
   ```
 - **Response (201):**

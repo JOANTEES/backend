@@ -17,6 +17,8 @@ async function migrate() {
 
     // Products table additive columns
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_special_delivery BOOLEAN DEFAULT false;",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_eligible BOOLEAN DEFAULT true;",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS pickup_eligible BOOLEAN DEFAULT true;",
 
     // --- Refactor Cart to Order-Level Delivery (Robust Script) ---
 
@@ -92,6 +94,81 @@ async function migrate() {
     );`,
     "CREATE INDEX IF NOT EXISTS idx_payments_booking_id ON payments(booking_id);",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);",
+
+    // Enhanced Orders Table (4 payment/delivery combinations)
+    "DROP TABLE IF EXISTS orders CASCADE;",
+    `CREATE TABLE orders (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      order_number VARCHAR(50) UNIQUE NOT NULL,
+      
+      -- Order Status
+      status VARCHAR(50) DEFAULT 'pending' CHECK (status IN (
+        'pending', 'confirmed', 'processing', 'ready_for_pickup', 
+        'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'
+      )),
+      
+      -- Payment Information
+      payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('online', 'on_delivery', 'on_pickup')),
+      payment_status VARCHAR(50) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed', 'refunded', 'cancelled')),
+      payment_reference VARCHAR(255),
+      
+      -- Delivery Information
+      delivery_method VARCHAR(20) NOT NULL CHECK (delivery_method IN ('delivery', 'pickup')),
+      delivery_zone_id INTEGER REFERENCES delivery_zones(id) ON DELETE SET NULL,
+      pickup_location_id INTEGER REFERENCES pickup_locations(id) ON DELETE SET NULL,
+      
+      -- Address Information
+      delivery_address_id INTEGER REFERENCES customer_addresses(id) ON DELETE SET NULL,
+      delivery_address JSONB,
+      
+      -- Pricing Breakdown
+      subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal > 0),
+      tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      shipping_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+      large_order_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+      special_delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+      total_amount DECIMAL(10,2) NOT NULL CHECK (total_amount > 0),
+      
+      -- Order Tracking
+      notes TEXT,
+      customer_notes TEXT,
+      estimated_delivery_date DATE,
+      actual_delivery_date TIMESTAMP,
+      
+      -- Timestamps
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      confirmed_at TIMESTAMP,
+      shipped_at TIMESTAMP,
+      delivered_at TIMESTAMP
+    );`,
+
+    // Enhanced Order Items Table
+    "DROP TABLE IF EXISTS order_items CASCADE;",
+    `CREATE TABLE order_items (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+      
+      -- Product Details (snapshot at time of order)
+      product_name VARCHAR(255) NOT NULL,
+      product_description TEXT,
+      product_image_url VARCHAR(500),
+      size VARCHAR(20),
+      color VARCHAR(50),
+      
+      -- Pricing
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      unit_price DECIMAL(10,2) NOT NULL CHECK (unit_price > 0),
+      subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal > 0),
+      
+      -- Special flags
+      requires_special_delivery BOOLEAN DEFAULT false,
+      
+      -- Timestamps
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
 
     // Customer Management Tables
     `CREATE TABLE IF NOT EXISTS customer_segments (
@@ -261,6 +338,21 @@ async function migrate() {
     "CREATE INDEX IF NOT EXISTS idx_pickup_locations_region_city ON pickup_locations(region_id, city_id);",
     "CREATE INDEX IF NOT EXISTS idx_customer_addresses_customer_id ON customer_addresses(customer_id);",
     "CREATE INDEX IF NOT EXISTS idx_customer_addresses_region_city ON customer_addresses(region_id, city_id);",
+
+    // Enhanced indexes for orders
+    "CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(payment_status);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_payment_method ON orders(payment_method);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_delivery_method ON orders(delivery_method);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_delivery_zone ON orders(delivery_zone_id);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_pickup_location ON orders(pickup_location_id);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);",
+    "CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);",
+
+    // Enhanced indexes for order_items
+    "CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);",
+    "CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);",
     "CREATE INDEX IF NOT EXISTS idx_customer_tags_customer_id ON customer_tags(customer_id);",
     "CREATE INDEX IF NOT EXISTS idx_customer_activity_customer_id ON customer_activity(customer_id);",
     "CREATE INDEX IF NOT EXISTS idx_customer_activity_type ON customer_activity(type);",

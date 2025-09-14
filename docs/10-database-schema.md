@@ -28,6 +28,8 @@ Contains all product information for the catalog.
 - `image_url`: VARCHAR(500)
 - `is_active`: BOOLEAN
 - `requires_special_delivery`: BOOLEAN
+- `delivery_eligible`: BOOLEAN
+- `pickup_eligible`: BOOLEAN
 - `created_at`: TIMESTAMP
 
 ### `carts`

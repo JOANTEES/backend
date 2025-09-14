@@ -30,31 +30,82 @@ CREATE TABLE IF NOT EXISTS products (
     image_url VARCHAR(500),
     is_active BOOLEAN DEFAULT true,
     requires_special_delivery BOOLEAN DEFAULT false,
+    delivery_eligible BOOLEAN DEFAULT true,
+    pickup_eligible BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Orders table for customer purchases
+-- Orders table for customer purchases (Enhanced for 4 payment/delivery combinations)
 CREATE TABLE IF NOT EXISTS orders (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     order_number VARCHAR(50) UNIQUE NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'shipped', 'delivered', 'cancelled')),
+    
+    -- Order Status
+    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN (
+        'pending', 'confirmed', 'processing', 'ready_for_pickup', 
+        'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'
+    )),
+    
+    -- Payment Information
+    payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('online', 'on_delivery', 'on_pickup')),
+    payment_status VARCHAR(50) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed', 'refunded', 'cancelled')),
+    payment_reference VARCHAR(255), -- For online payment references
+    
+    -- Delivery Information
+    delivery_method VARCHAR(20) NOT NULL CHECK (delivery_method IN ('delivery', 'pickup')),
+    delivery_zone_id INTEGER REFERENCES delivery_zones(id) ON DELETE SET NULL,
+    pickup_location_id INTEGER REFERENCES pickup_locations(id) ON DELETE SET NULL,
+    
+    -- Address Information
+    delivery_address_id INTEGER REFERENCES customer_addresses(id) ON DELETE SET NULL,
+    delivery_address JSONB, -- Structured address for delivery
+    
+    -- Pricing Breakdown
+    subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal > 0),
+    tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    shipping_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+    large_order_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+    special_delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
     total_amount DECIMAL(10,2) NOT NULL CHECK (total_amount > 0),
-    shipping_address TEXT NOT NULL,
-    payment_status VARCHAR(50) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed', 'refunded')),
+    
+    -- Order Tracking
+    notes TEXT, -- Admin notes
+    customer_notes TEXT, -- Customer special instructions
+    estimated_delivery_date DATE,
+    actual_delivery_date TIMESTAMP,
+    
+    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TIMESTAMP,
+    shipped_at TIMESTAMP,
+    delivered_at TIMESTAMP
 );
 
--- Order items table for individual items in orders
+-- Order items table for individual items in orders (Enhanced)
 CREATE TABLE IF NOT EXISTS order_items (
     id SERIAL PRIMARY KEY,
     order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    
+    -- Product Details (snapshot at time of order)
+    product_name VARCHAR(255) NOT NULL,
+    product_description TEXT,
+    product_image_url VARCHAR(500),
+    size VARCHAR(20),
+    color VARCHAR(50),
+    
+    -- Pricing
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     unit_price DECIMAL(10,2) NOT NULL CHECK (unit_price > 0),
     subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal > 0),
+    
+    -- Special flags
+    requires_special_delivery BOOLEAN DEFAULT false,
+    
+    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -84,9 +135,20 @@ CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(date);
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+-- Enhanced indexes for orders
 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(payment_status);
+CREATE INDEX IF NOT EXISTS idx_orders_payment_method ON orders(payment_method);
+CREATE INDEX IF NOT EXISTS idx_orders_delivery_method ON orders(delivery_method);
+CREATE INDEX IF NOT EXISTS idx_orders_delivery_zone ON orders(delivery_zone_id);
+CREATE INDEX IF NOT EXISTS idx_orders_pickup_location ON orders(pickup_location_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
+
+-- Enhanced indexes for order_items
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
 
 -- Insert sample admin user (password: admin123)
 INSERT INTO users (email, password_hash, first_name, last_name, role) 

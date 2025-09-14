@@ -21,6 +21,7 @@ const adminSettingsRoutes = require("./routes/admin-settings");
 const ghanaLocationsRoutes = require("./routes/ghana-locations");
 const pickupLocationsRoutes = require("./routes/pickup-locations");
 const customerAddressesRoutes = require("./routes/customer-addresses");
+const ordersRoutes = require("./routes/orders");
 
 // Database connection
 const pool = new Pool({
@@ -60,6 +61,7 @@ app.use("/api/admin/settings", adminSettingsRoutes);
 app.use("/api/ghana", ghanaLocationsRoutes);
 app.use("/api/pickup-locations", pickupLocationsRoutes);
 app.use("/api/customer-addresses", customerAddressesRoutes);
+app.use("/api/orders", ordersRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -188,6 +190,10 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(
       `   PUT /api/customer-addresses/:id/set-default - Set address as default`
     );
+    console.log(`📦 Order management endpoints:`);
+    console.log(`   POST /api/orders - Create order from cart`);
+    console.log(`   GET /api/orders - Get user's orders`);
+    console.log(`   GET /api/orders/:id - Get single order with items`);
   });
 }
 
