@@ -77,6 +77,7 @@ async function migrate() {
     `CREATE TABLE IF NOT EXISTS payments (
       id SERIAL PRIMARY KEY,
       booking_id INTEGER REFERENCES bookings(id) ON DELETE CASCADE,
+      order_id INTEGER,
       amount DECIMAL(10,2) NOT NULL CHECK (amount >= 0),
       currency VARCHAR(10) NOT NULL DEFAULT 'GHS',
       method VARCHAR(50) NOT NULL DEFAULT 'paystack',
@@ -92,8 +93,33 @@ async function migrate() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );`,
+    // Ensure order_id exists if payments existed before
+    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS order_id INTEGER;",
     "CREATE INDEX IF NOT EXISTS idx_payments_booking_id ON payments(booking_id);",
+    "CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);",
+
+    // Checkout sessions for pre-payment flow (create order after payment success)
+    `CREATE TABLE IF NOT EXISTS checkout_sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      delivery_method VARCHAR(20) NOT NULL CHECK (delivery_method IN ('delivery','pickup')),
+      delivery_zone_id INTEGER REFERENCES delivery_zones(id) ON DELETE SET NULL,
+      delivery_address_id INTEGER REFERENCES customer_addresses(id) ON DELETE SET NULL,
+      pickup_location_id INTEGER REFERENCES pickup_locations(id) ON DELETE SET NULL,
+      subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+      tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      shipping_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+      large_order_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+      special_delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
+      total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      payment_reference VARCHAR(255),
+      status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','cancelled','failed')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
+    "CREATE INDEX IF NOT EXISTS idx_checkout_sessions_user ON checkout_sessions(user_id);",
+    "CREATE INDEX IF NOT EXISTS idx_checkout_sessions_reference ON checkout_sessions(payment_reference);",
 
     // Enhanced Orders Table (4 payment/delivery combinations)
     "DROP TABLE IF EXISTS orders CASCADE;",

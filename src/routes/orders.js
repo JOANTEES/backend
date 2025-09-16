@@ -91,6 +91,7 @@ async function calculateOrderTotals(
 }
 
 // POST /api/orders - Create order from cart
+// NOTE: For online payments, order creation now happens after Paystack success via webhook/callback
 router.post(
   "/",
   authenticateUser,
@@ -293,7 +294,43 @@ router.post(
         }
       }
 
-      // Start transaction
+      // For online payments: create a checkout session instead of an order
+      if (paymentMethod === "online") {
+        // Calculate totals for the session (reuse the earlier totals)
+        const sessionRes = await pool.query(
+          `INSERT INTO checkout_sessions (
+            user_id, delivery_method, delivery_zone_id, delivery_address_id, pickup_location_id,
+            subtotal, tax_amount, shipping_fee, large_order_fee, special_delivery_fee, total_amount, status
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending')
+          RETURNING id, created_at`,
+          [
+            userId,
+            deliveryMethod,
+            deliveryMethod === "delivery" ? cart.delivery_zone_id : null,
+            deliveryAddressId || null,
+            deliveryMethod === "pickup" ? pickupLocationId : null,
+            totals.subtotal,
+            totals.taxAmount,
+            totals.shippingFee,
+            totals.largeOrderFee,
+            totals.specialDeliveryFee,
+            totals.totalAmount,
+          ]
+        );
+
+        return res.status(201).json({
+          success: true,
+          message:
+            "Checkout session created. Initialize Paystack to proceed with payment.",
+          session: {
+            id: sessionRes.rows[0].id.toString(),
+            amount: totals.totalAmount,
+            createdAt: sessionRes.rows[0].created_at.toISOString(),
+          },
+        });
+      }
+
+      // Start transaction for offline payments (on_delivery/on_pickup)
       await pool.query("BEGIN");
 
       try {
@@ -628,4 +665,222 @@ router.get("/:id", authenticateUser, async (req, res) => {
   }
 });
 
+// GET /api/admin/orders - Admin list of all orders with filters
+router.get("/admin", adminAuth, async (req, res) => {
+  try {
+    const {
+      status,
+      paymentStatus,
+      deliveryMethod,
+      paymentMethod,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+      q,
+    } = req.query;
+
+    let where = "WHERE 1=1";
+    const params = [];
+    let idx = 0;
+
+    if (status) {
+      params.push(status);
+      where += ` AND o.status = $${++idx}`;
+    }
+    if (paymentStatus) {
+      params.push(paymentStatus);
+      where += ` AND o.payment_status = $${++idx}`;
+    }
+    if (deliveryMethod) {
+      params.push(deliveryMethod);
+      where += ` AND o.delivery_method = $${++idx}`;
+    }
+    if (paymentMethod) {
+      params.push(paymentMethod);
+      where += ` AND o.payment_method = $${++idx}`;
+    }
+    if (startDate) {
+      params.push(startDate);
+      where += ` AND o.created_at >= $${++idx}`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      where += ` AND o.created_at <= $${++idx}`;
+    }
+    if (q) {
+      // search by order_number or user email
+      params.push(`%${q}%`);
+      where += ` AND (o.order_number ILIKE $${++idx} OR u.email ILIKE $${idx})`;
+    }
+
+    const offset = (Number(page) - 1) * Number(limit);
+    params.push(limit);
+    const limitIdx = ++idx;
+    params.push(offset);
+    const offsetIdx = ++idx;
+
+    const result = await pool.query(
+      `SELECT 
+         o.id, o.order_number, o.status, o.payment_method, o.payment_status,
+         o.delivery_method, o.subtotal, o.tax_amount, o.shipping_fee, o.total_amount,
+         o.created_at, o.updated_at,
+         u.email as customer_email,
+         pl.name as pickup_location_name,
+         dz.name as delivery_zone_name
+       FROM orders o
+       LEFT JOIN users u ON u.id = o.user_id
+       LEFT JOIN pickup_locations pl ON o.pickup_location_id = pl.id
+       LEFT JOIN delivery_zones dz ON o.delivery_zone_id = dz.id
+       ${where}
+       ORDER BY o.created_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params
+    );
+
+    return res.json({
+      success: true,
+      message: "Admin orders retrieved successfully",
+      count: result.rows.length,
+      orders: result.rows.map((row) => ({
+        id: row.id.toString(),
+        orderNumber: row.order_number,
+        status: row.status,
+        paymentMethod: row.payment_method,
+        paymentStatus: row.payment_status,
+        deliveryMethod: row.delivery_method,
+        totals: {
+          subtotal: parseFloat(row.subtotal),
+          taxAmount: parseFloat(row.tax_amount),
+          shippingFee: parseFloat(row.shipping_fee),
+          totalAmount: parseFloat(row.total_amount),
+        },
+        customerEmail: row.customer_email,
+        pickupLocationName: row.pickup_location_name,
+        deliveryZoneName: row.delivery_zone_name,
+        createdAt: row.created_at.toISOString(),
+        updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
+      })),
+      page: Number(page),
+      limit: Number(limit),
+    });
+  } catch (error) {
+    console.error("Error fetching admin orders:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin orders",
+      error: error.message,
+    });
+  }
+});
 module.exports = router;
+
+// POST /api/orders/:id/pay/initialize - Initialize Paystack payment for an order (customer)
+router.post("/:id/pay/initialize", authenticateUser, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID. Must be a number.",
+      });
+    }
+
+    const userId = req.user.id;
+
+    // Fetch order and ensure it belongs to user
+    const orderRes = await pool.query(
+      `SELECT id, user_id, order_number, total_amount, payment_status, payment_method
+         FROM orders WHERE id = $1 AND user_id = $2`,
+      [orderId, userId]
+    );
+    if (orderRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+    const order = orderRes.rows[0];
+
+    if (order.payment_status === "paid") {
+      return res.status(400).json({
+        success: false,
+        message: "Order already paid",
+      });
+    }
+
+    // Get user's email
+    const userRes = await pool.query(`SELECT email FROM users WHERE id = $1`, [
+      userId,
+    ]);
+    const customerEmail = userRes.rows[0]?.email;
+    if (!customerEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "User email not found",
+      });
+    }
+
+    // Use single env for both dev and prod
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      return res.status(500).json({
+        success: false,
+        message: "Paystack secret key not configured",
+      });
+    }
+
+    // Initialize Paystack transaction
+    const callbackUrl = process.env.PAYSTACK_CALLBACK_URL || null;
+    const initRes = await fetch(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${secret}`,
+        },
+        body: JSON.stringify({
+          email: customerEmail,
+          amount: Math.round(Number(order.total_amount) * 100),
+          currency: "GHS",
+          metadata: {
+            order_id: order.id,
+            user_id: userId,
+            order_number: order.order_number,
+          },
+          ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+        }),
+      }
+    );
+    const initJson = await initRes.json();
+    if (!initRes.ok || !initJson.status) {
+      return res.status(502).json({
+        success: false,
+        message: "Paystack initialization failed",
+        error: initJson,
+      });
+    }
+
+    const { reference, authorization_url, access_code } = initJson.data;
+
+    // Save payment reference on order
+    await pool.query(
+      `UPDATE orders SET payment_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [reference, order.id]
+    );
+
+    return res.json({
+      success: true,
+      message: "Payment initialized",
+      data: { reference, authorization_url, access_code },
+    });
+  } catch (error) {
+    console.error("Error initializing order payment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to initialize payment",
+      error: error.message,
+    });
+  }
+});

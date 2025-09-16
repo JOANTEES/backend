@@ -115,31 +115,56 @@ async function getCartData(userId) {
 // Helper function to automatically determine delivery zone based on address
 async function determineDeliveryZone(regionId, cityId, areaName) {
   try {
-    const result = await pool.query(
+    // 1) Try exact area match (case-insensitive)
+    const exact = await pool.query(
       `
       SELECT 
-        dz.id, 
-        dz.name, 
-        dz.delivery_fee, 
-        dz.estimated_days
+        dz.id, dz.name, dz.delivery_fee, dz.estimated_days
       FROM delivery_zones dz
       JOIN delivery_zone_areas dza ON dz.id = dza.delivery_zone_id
       WHERE dz.is_active = true 
         AND dza.region_id = $1 
         AND dza.city_id = $2 
-        AND dza.area_name = $3
+        AND LOWER(dza.area_name) = LOWER($3)
       LIMIT 1
     `,
       [regionId, cityId, areaName]
     );
 
-    if (result.rows.length > 0) {
-      const zone = result.rows[0];
+    const row = exact.rows[0];
+    if (row) {
       return {
-        id: zone.id.toString(),
-        name: zone.name,
-        deliveryFee: parseFloat(zone.delivery_fee),
-        estimatedDays: zone.estimated_days,
+        id: row.id.toString(),
+        name: row.name,
+        deliveryFee: parseFloat(row.delivery_fee),
+        estimatedDays: row.estimated_days,
+      };
+    }
+
+    // 2) Fallback: any zone covering the city (ignore area), pick the lowest delivery fee
+    const cityWide = await pool.query(
+      `
+      SELECT dz.id, dz.name, dz.delivery_fee, dz.estimated_days
+      FROM delivery_zones dz
+      WHERE dz.is_active = true AND EXISTS (
+        SELECT 1 FROM delivery_zone_areas dza
+        WHERE dza.delivery_zone_id = dz.id
+          AND dza.region_id = $1
+          AND dza.city_id = $2
+      )
+      ORDER BY dz.delivery_fee ASC
+      LIMIT 1
+    `,
+      [regionId, cityId]
+    );
+
+    const anyRow = cityWide.rows[0];
+    if (anyRow) {
+      return {
+        id: anyRow.id.toString(),
+        name: anyRow.name,
+        deliveryFee: parseFloat(anyRow.delivery_fee),
+        estimatedDays: anyRow.estimated_days,
       };
     }
 
@@ -554,9 +579,14 @@ router.put(
 );
 
 // DELETE /api/cart/:itemId - Remove a single item from the cart
-router.delete("/:itemId", authenticateUser, async (req, res) => {
+router.delete("/:itemId", authenticateUser, async (req, res, next) => {
   const { itemId } = req.params;
   const userId = req.user.id;
+
+  // If the path was actually '/clear', let the dedicated route handle it
+  if (itemId === "clear") {
+    return next();
+  }
 
   const client = await pool.connect();
   try {

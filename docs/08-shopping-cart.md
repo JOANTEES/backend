@@ -151,7 +151,9 @@ The cart system automatically validates that all items support the selected deli
 ### 4. Set Delivery Address (Auto-Determine Zone)
 
 - **URL:** `PUT /api/cart/delivery-address`
-- **Description:** Sets the delivery address and automatically determines the correct delivery zone based on the address.
+- **Description:** Sets the delivery address and automatically determines the delivery zone.
+  - First tries an exact area match (case-insensitive) against admin-defined `delivery_zone_areas`.
+  - If no exact area match, falls back to any zone that covers the provided `regionId` + `cityId` (area ignored). If multiple zones cover the city, the lowest delivery fee is selected.
 - **Headers:** `Authorization: Bearer <JWT_TOKEN>`
 - **Request Body:**
   ```json
@@ -186,13 +188,11 @@ The cart system automatically validates that all items support the selected deli
     }
   }
   ```
-- **Response (400):**
-  ```json
-  {
-    "success": false,
-    "message": "No delivery zone found for the specified address. Please contact support."
-  }
-  ```
+  **Notes:**
+- The `areaName` is helpful for a precise match if admins created area-level coverage, but it is not required for coverage. City-level coverage is sufficient if no area row matches.
+- Frontend should send `regionId`, `cityId`, and any user-entered `areaName` string. The backend will handle matching.
+
+**Possible 400 response:** Only when no zone exists that covers the specified `regionId` + `cityId`.
 
 ### 5. Update Cart Item Quantity
 

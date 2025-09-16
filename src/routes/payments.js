@@ -35,13 +35,16 @@ router.post(
   "/",
   adminAuth,
   [
-    body("booking_id").isInt({ min: 1 }),
+    body("booking_id").optional().isInt({ min: 1 }),
+    body("order_id").optional().isInt({ min: 1 }),
     body("amount").isFloat({ min: 0.01 }),
     body("currency").optional().isString(),
     body("status")
       .optional()
       .isIn(["pending", "completed", "failed", "refunded"]),
-    body("method").optional().isIn(["cash", "bank_transfer", "check"]),
+    body("method")
+      .optional()
+      .isIn(["cash", "bank_transfer", "check", "paystack"]),
     body("notes").optional().isString(),
   ],
   async (req, res) => {
@@ -54,23 +57,34 @@ router.post(
 
       const {
         booking_id,
+        order_id,
         amount,
         currency = "GHS",
         status = "pending",
         method = "cash",
         notes,
       } = req.body;
+
+      if (!booking_id && !order_id) {
+        return res.status(400).json({
+          message: "Either booking_id or order_id is required",
+        });
+      }
+
       const insert = await pool.query(
-        `INSERT INTO payments (booking_id, amount, currency, status, method, provider, created_at)
-         VALUES ($1,$2,$3,$4,$5,'paystack', CURRENT_TIMESTAMP)
-         RETURNING id, booking_id, amount, currency, method, status, provider, created_at`,
-        [booking_id, amount, currency, status, method]
+        `INSERT INTO payments (booking_id, order_id, amount, currency, status, method, provider, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,'paystack', CURRENT_TIMESTAMP)
+         RETURNING id, booking_id, order_id, amount, currency, method, status, provider, created_at`,
+        [booking_id || null, order_id || null, amount, currency, status, method]
       );
       const payment = insert.rows[0];
 
       // Recalculate linked booking payment status, if any
       if (payment.booking_id) {
         await recalcBookingPaymentStatus(payment.booking_id);
+      }
+      if (payment.order_id) {
+        await recalcOrderPaymentStatus(payment.order_id);
       }
 
       return res.status(201).json({ payment });
@@ -141,6 +155,65 @@ router.post(
   }
 );
 
+// POST /api/payments/paystack/initialize-session - prepare inline-only session (no server init)
+router.post("/paystack/initialize-session", async (req, res) => {
+  try {
+    // Require auth via header token if middleware not applied globally
+    const authHeader =
+      req.header("authorization") || req.header("Authorization");
+    if (!authHeader) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { sessionId } = req.body || {};
+    if (!sessionId || isNaN(parseInt(sessionId))) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid sessionId is required" });
+    }
+
+    // Fetch session and user
+    const sessionRes = await pool.query(
+      `SELECT cs.*, u.email as customer_email
+         FROM checkout_sessions cs
+         JOIN users u ON u.id = cs.user_id
+         WHERE cs.id = $1 AND cs.status = 'pending'`,
+      [parseInt(sessionId)]
+    );
+    if (sessionRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Checkout session not found or not pending",
+      });
+    }
+    const s = sessionRes.rows[0];
+
+    // Generate and persist a fresh unique reference for this attempt
+    const uniqueRef = `JTN-${s.id}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    await pool.query(
+      `UPDATE checkout_sessions SET payment_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [uniqueRef, s.id]
+    );
+
+    // Return inline parameters only (no authorization_url)
+    return res.json({
+      success: true,
+      message: "Session payment prepared",
+      data: {
+        reference: uniqueRef,
+        amount: Math.round(Number(s.total_amount) * 100),
+        currency: "GHS",
+        email: s.customer_email,
+      },
+    });
+  } catch (error) {
+    console.error("Error initializing session payment:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 // POST /api/payments/paystack/webhook - Paystack webhook handler
 router.post(
   "/paystack/webhook",
@@ -171,12 +244,23 @@ router.post(
           ? parseInt(data.metadata.booking_id)
           : null;
 
+        // Try to resolve order by reference saved on orders.payment_reference
+        let orderId = null;
+        const orderRes = await pool.query(
+          `SELECT id FROM orders WHERE payment_reference = $1`,
+          [reference]
+        );
+        if (orderRes.rows.length > 0) {
+          orderId = orderRes.rows[0].id;
+        }
+
         await pool.query(
-          `INSERT INTO payments (booking_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          `INSERT INTO payments (booking_id, order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT DO NOTHING`,
           [
             bookingId,
+            orderId,
             amount,
             data.currency || "GHS",
             "paystack",
@@ -194,6 +278,164 @@ router.post(
         if (bookingId) {
           await recalcBookingPaymentStatus(bookingId);
         }
+        if (orderId) {
+          await pool.query(
+            `UPDATE orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            [orderId]
+          );
+        } else {
+          // No order yet: try creating order from a checkout session
+          let sessionRes = await pool.query(
+            `SELECT * FROM checkout_sessions WHERE payment_reference = $1 ORDER BY created_at DESC LIMIT 1`,
+            [reference]
+          );
+          // Fallback: match by metadata.session_id when reference isn't stored
+          if (sessionRes.rows.length === 0 && data.metadata?.session_id) {
+            sessionRes = await pool.query(
+              `SELECT * FROM checkout_sessions WHERE id = $1 AND status = 'pending'`,
+              [parseInt(data.metadata.session_id)]
+            );
+          }
+          if (sessionRes.rows.length > 0) {
+            const s = sessionRes.rows[0];
+
+            const client = await pool.connect();
+            try {
+              await client.query("BEGIN");
+
+              // Build delivery_address JSON if delivery
+              let deliveryAddressJson = null;
+              if (s.delivery_method === "delivery" && s.delivery_address_id) {
+                const addrRes = await client.query(
+                  `SELECT ca.*, gr.name as region_name, gc.name as city_name
+                   FROM customer_addresses ca
+                   JOIN ghana_regions gr ON ca.region_id = gr.id
+                   JOIN ghana_cities gc ON ca.city_id = gc.id
+                   WHERE ca.id = $1`,
+                  [s.delivery_address_id]
+                );
+                if (addrRes.rows.length > 0) {
+                  const addr = addrRes.rows[0];
+                  deliveryAddressJson = {
+                    regionId: addr.region_id,
+                    regionName: addr.region_name,
+                    cityId: addr.city_id,
+                    cityName: addr.city_name,
+                    areaName: addr.area_name,
+                    landmark: addr.landmark,
+                    additionalInstructions: addr.additional_instructions,
+                    contactPhone: addr.contact_phone,
+                    googleMapsLink: addr.google_maps_link,
+                  };
+                }
+              }
+
+              // Create order from session data
+              const orderNum = `ORD-${Date.now()
+                .toString()
+                .slice(-6)}-${Math.floor(Math.random() * 1000)
+                .toString()
+                .padStart(3, "0")}`;
+              const orderInsert = await client.query(
+                `INSERT INTO orders (
+                  user_id, order_number, payment_method, delivery_method,
+                  delivery_zone_id, pickup_location_id, delivery_address_id,
+                  delivery_address, subtotal, tax_amount, shipping_fee,
+                  large_order_fee, special_delivery_fee, total_amount,
+                  customer_notes, payment_status, payment_reference
+                ) VALUES ($1,$2,'online',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULL,'paid',$14)
+                RETURNING id`,
+                [
+                  s.user_id,
+                  orderNum,
+                  s.delivery_method,
+                  s.delivery_zone_id,
+                  s.pickup_location_id,
+                  s.delivery_address_id,
+                  deliveryAddressJson
+                    ? JSON.stringify(deliveryAddressJson)
+                    : null,
+                  s.subtotal,
+                  s.tax_amount,
+                  s.shipping_fee,
+                  s.large_order_fee,
+                  s.special_delivery_fee,
+                  s.total_amount,
+                  reference,
+                ]
+              );
+              const newOrderId = orderInsert.rows[0].id;
+
+              // Create order items from user's cart
+              const cartItemsRes = await client.query(
+                `SELECT ci.*, p.name as product_name, p.description as product_description,
+                        p.image_url as product_image_url, p.price as unit_price,
+                        p.requires_special_delivery
+                 FROM cart_items ci
+                 JOIN carts c ON ci.cart_id = c.id
+                 JOIN products p ON ci.product_id = p.id
+                 WHERE c.user_id = $1`,
+                [s.user_id]
+              );
+
+              for (const item of cartItemsRes.rows) {
+                await client.query(
+                  `INSERT INTO order_items (
+                     order_id, product_id, product_name, product_description,
+                     product_image_url, size, color, quantity, unit_price,
+                     subtotal, requires_special_delivery
+                   ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                  [
+                    newOrderId,
+                    item.product_id,
+                    item.product_name,
+                    item.product_description,
+                    item.product_image_url,
+                    item.size,
+                    item.color,
+                    item.quantity,
+                    item.unit_price,
+                    Number(item.unit_price) * item.quantity,
+                    item.requires_special_delivery,
+                  ]
+                );
+
+                await client.query(
+                  `UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2`,
+                  [item.quantity, item.product_id]
+                );
+              }
+
+              // Attach payments to new order
+              await client.query(
+                `UPDATE payments SET order_id = $1 WHERE provider_reference = $2 AND order_id IS NULL`,
+                [newOrderId, reference]
+              );
+
+              // Clear cart
+              await client.query(
+                `DELETE FROM cart_items USING carts WHERE cart_items.cart_id = carts.id AND carts.user_id = $1`,
+                [s.user_id]
+              );
+              await client.query(`DELETE FROM carts WHERE user_id = $1`, [
+                s.user_id,
+              ]);
+
+              // Mark session as paid
+              await client.query(
+                `UPDATE checkout_sessions SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+                [s.id]
+              );
+
+              await client.query("COMMIT");
+            } catch (e) {
+              await pool.query("ROLLBACK");
+              throw e;
+            } finally {
+              client.release();
+            }
+          }
+        }
       }
 
       return res.sendStatus(200);
@@ -203,6 +445,276 @@ router.post(
     }
   }
 );
+
+// GET /api/payments/paystack/callback - Paystack redirect handler (verifies and redirects)
+router.get("/paystack/callback", async (req, res) => {
+  try {
+    const reference = req.query.reference;
+    if (!reference) return res.status(400).send("Missing reference");
+
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) return res.status(500).send("Paystack key not configured");
+
+    // Verify transaction
+    const verifyRes = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(
+        reference
+      )}`,
+      {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const verifyJson = await verifyRes.json();
+    if (!verifyRes.ok || !verifyJson.status) {
+      return res.status(502).send("Verification failed");
+    }
+
+    // Find order by reference
+    const orderRes = await pool.query(
+      `SELECT id FROM orders WHERE payment_reference = $1`,
+      [reference]
+    );
+    if (orderRes.rows.length > 0 && verifyJson.data.status === "success") {
+      const orderId = orderRes.rows[0].id;
+
+      // 1) Update order payment status
+      await pool.query(
+        `UPDATE orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [orderId]
+      );
+
+      // 2) Ensure there is a completed payment record for this order/reference
+      const amount = Number(verifyJson.data.amount || 0) / 100;
+      const currency = verifyJson.data.currency || "GHS";
+      const transactionId = verifyJson.data.id?.toString() || null;
+      const authorizationCode =
+        verifyJson.data.authorization?.authorization_code || null;
+      const customerEmail = verifyJson.data.customer?.email || null;
+
+      // Try update existing payment by order_id + provider_reference
+      const updated = await pool.query(
+        `UPDATE payments
+         SET status = 'completed', amount = COALESCE($1, amount), currency = $2, method = 'paystack', provider = 'paystack',
+             paystack_reference = $3, transaction_id = $4, authorization_code = $5, customer_email = COALESCE($6, customer_email), updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = $7 AND provider_reference = $8
+         RETURNING id`,
+        [
+          amount || null,
+          currency,
+          reference,
+          transactionId,
+          authorizationCode,
+          customerEmail,
+          orderId,
+          reference,
+        ]
+      );
+
+      if (updated.rows.length === 0) {
+        // No existing row — insert one
+        await pool.query(
+          `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email)
+           VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8)`,
+          [
+            orderId,
+            amount,
+            currency,
+            reference,
+            reference,
+            transactionId,
+            authorizationCode,
+            customerEmail,
+          ]
+        );
+      }
+    }
+    // If no order yet, try creating it from session as well (mirror webhook path)
+    else {
+      const sessionRes = await pool.query(
+        `SELECT * FROM checkout_sessions WHERE payment_reference = $1 ORDER BY created_at DESC LIMIT 1`,
+        [reference]
+      );
+      if (sessionRes.rows.length > 0 && verifyJson.data.status === "success") {
+        const s = sessionRes.rows[0];
+        const orderNum = `ORD-${Date.now().toString().slice(-6)}-${Math.floor(
+          Math.random() * 1000
+        )
+          .toString()
+          .padStart(3, "0")}`;
+        const orderInsert = await pool.query(
+          `INSERT INTO orders (
+            user_id, order_number, payment_method, delivery_method,
+            delivery_zone_id, pickup_location_id, delivery_address_id,
+            delivery_address, subtotal, tax_amount, shipping_fee,
+            large_order_fee, special_delivery_fee, total_amount,
+            customer_notes, payment_status, payment_reference
+          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13)
+          RETURNING id`,
+          [
+            s.user_id,
+            orderNum,
+            s.delivery_method,
+            s.delivery_zone_id,
+            s.pickup_location_id,
+            s.delivery_address_id,
+            s.subtotal,
+            s.tax_amount,
+            s.shipping_fee,
+            s.large_order_fee,
+            s.special_delivery_fee,
+            s.total_amount,
+            reference,
+          ]
+        );
+        const newOrderId = orderInsert.rows[0].id;
+        await pool.query(
+          `UPDATE payments SET order_id = $1 WHERE provider_reference = $2 AND order_id IS NULL`,
+          [newOrderId, reference]
+        );
+        await pool.query(
+          `UPDATE checkout_sessions SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [s.id]
+        );
+      }
+    }
+
+    // Redirect back to frontend success/failure page
+    const successUrl = process.env.PAYSTACK_SUCCESS_URL || "/";
+    const failureUrl = process.env.PAYSTACK_FAILURE_URL || "/";
+    const redirectTo =
+      verifyJson.data.status === "success" ? successUrl : failureUrl;
+    return res.redirect(302, redirectTo);
+  } catch (e) {
+    console.error("Error in Paystack callback:", e);
+    return res.status(500).send("Server error");
+  }
+});
+
+// POST /api/payments/paystack/verify - client-triggered verification fallback (use after inline success)
+router.post("/paystack/verify", async (req, res) => {
+  try {
+    const { reference } = req.body || {};
+    if (!reference || typeof reference !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, message: "reference is required" });
+    }
+
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      return res
+        .status(500)
+        .json({ success: false, message: "Paystack key not configured" });
+    }
+
+    // Verify transaction
+    const verifyRes = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(
+        reference
+      )}`,
+      {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const verifyJson = await verifyRes.json();
+    if (!verifyRes.ok || !verifyJson.status) {
+      return res.status(502).json({
+        success: false,
+        message: "Verification failed",
+        error: verifyJson,
+      });
+    }
+
+    // Mirror callback logic to create/link order from session if needed
+    const data = verifyJson.data;
+
+    // Try resolve order by reference
+    let orderId = null;
+    const orderRes = await pool.query(
+      `SELECT id FROM orders WHERE payment_reference = $1`,
+      [reference]
+    );
+    if (orderRes.rows.length > 0) {
+      orderId = orderRes.rows[0].id;
+    }
+
+    if (orderId) {
+      await pool.query(
+        `UPDATE orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [orderId]
+      );
+    } else {
+      // No order yet: try session by reference
+      let sessionRes = await pool.query(
+        `SELECT * FROM checkout_sessions WHERE payment_reference = $1 ORDER BY created_at DESC LIMIT 1`,
+        [reference]
+      );
+      if (sessionRes.rows.length === 0 && data?.metadata?.session_id) {
+        sessionRes = await pool.query(
+          `SELECT * FROM checkout_sessions WHERE id = $1 AND status = 'pending'`,
+          [parseInt(data.metadata.session_id)]
+        );
+      }
+      if (sessionRes.rows.length > 0 && data.status === "success") {
+        const s = sessionRes.rows[0];
+        const orderNum = `ORD-${Date.now().toString().slice(-6)}-${Math.floor(
+          Math.random() * 1000
+        )
+          .toString()
+          .padStart(3, "0")}`;
+        const orderInsert = await pool.query(
+          `INSERT INTO orders (
+            user_id, order_number, payment_method, delivery_method,
+            delivery_zone_id, pickup_location_id, delivery_address_id,
+            delivery_address, subtotal, tax_amount, shipping_fee,
+            large_order_fee, special_delivery_fee, total_amount,
+            customer_notes, payment_status, payment_reference
+          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13)
+          RETURNING id`,
+          [
+            s.user_id,
+            orderNum,
+            s.delivery_method,
+            s.delivery_zone_id,
+            s.pickup_location_id,
+            s.delivery_address_id,
+            s.subtotal,
+            s.tax_amount,
+            s.shipping_fee,
+            s.large_order_fee,
+            s.special_delivery_fee,
+            s.total_amount,
+            reference,
+          ]
+        );
+        orderId = orderInsert.rows[0].id;
+        await pool.query(
+          `UPDATE payments SET order_id = $1 WHERE provider_reference = $2 AND order_id IS NULL`,
+          [orderId, reference]
+        );
+        await pool.query(
+          `UPDATE checkout_sessions SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [s.id]
+        );
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: "Verification processed",
+      orderId: orderId ? orderId.toString() : null,
+    });
+  } catch (e) {
+    console.error("Error verifying Paystack transaction:", e);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
 module.exports = router;
 
@@ -234,7 +746,7 @@ router.patch(
 
       // Update payment
       const updated = await pool.query(
-        `UPDATE payments SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, booking_id, status`,
+        `UPDATE payments SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, booking_id, order_id, status`,
         [status, id]
       );
       if (updated.rows.length === 0)
@@ -243,6 +755,9 @@ router.patch(
       const payment = updated.rows[0];
       if (payment.booking_id) {
         await recalcBookingPaymentStatus(payment.booking_id);
+      }
+      if (payment.order_id) {
+        await recalcOrderPaymentStatus(payment.order_id);
       }
 
       return res.json({ payment });
@@ -283,5 +798,33 @@ async function recalcBookingPaymentStatus(bookingId) {
     );
   } catch (e) {
     console.error("Error recalculating booking payment status:", e);
+  }
+}
+
+// Helper: recalc an order's payment_status based on sum of completed payments vs order total_amount
+async function recalcOrderPaymentStatus(orderId) {
+  try {
+    const orderRes = await pool.query(
+      `SELECT total_amount FROM orders WHERE id = $1`,
+      [orderId]
+    );
+    if (orderRes.rows.length === 0) return;
+    const total = Number(orderRes.rows[0].total_amount || 0);
+
+    const sumRes = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0)::decimal AS paid FROM payments WHERE order_id = $1 AND status = 'completed'`,
+      [orderId]
+    );
+    const paid = Number(sumRes.rows[0].paid || 0);
+
+    let newStatus = "pending";
+    if (paid >= total && total > 0) newStatus = "paid";
+
+    await pool.query(
+      `UPDATE orders SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [newStatus, orderId]
+    );
+  } catch (e) {
+    console.error("Error recalculating order payment status:", e);
   }
 }
