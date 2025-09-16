@@ -615,45 +615,418 @@ Frontend notes
 - Inline: Always use the initializer response for `reference`, `amount` (kobo), `currency: "GHS"`, and `email`.
 - After inline success in local dev: call `POST /api/payments/paystack/verify` with `{ reference }` when webhooks cannot reach your machine.
 
-## New Payment Management Flow
+## Payment Management System
 
-### Key Changes
+### ⚠️ IMPORTANT: Frontend Changes Required
 
-1. **No Manual Payment Creation**: Payments are automatically created when bookings/orders are created
-2. **Update-Only Payments Manager**: Frontend should remove "Add Payment" button, only show "Update Payment" functionality
-3. **Partial Payment Support**: Use `PATCH /api/payments/:id/add-payment` to add partial amounts
-4. **Payment History Tracking**: Each payment record includes `payment_history` JSONB field with transaction details
+**The payment system has been updated to properly handle partial payments. The frontend MUST be updated to display the correct information.**
+
+**Key Changes:**
+
+- **`payment.amount`** = Total amount due (e.g., ₵1,000 for a booking)
+- **Amount Paid** = Calculate from `payment_history.transactions` (starts at ₵0)
+- **Payment History** = All individual transactions are stored in `payment_history.transactions`
+
+**Frontend Must:**
+
+1. Calculate amount paid from `payment_history.transactions` (not from `payment.amount`)
+2. Display payment progress correctly
+3. Show individual transaction history
+4. Handle "partial" status properly
+
+### Understanding Payment Structure
+
+**IMPORTANT**: The payment system has been updated to properly handle partial payments. Here's how it works:
+
+#### Payment Record Structure
+
+Each payment record has these key fields:
+
+- **`amount`**: Total amount due (e.g., 1000 for a ₵1000 booking)
+- **`status`**: Payment status (`pending`, `partial`, `completed`, `failed`, `refunded`, `cancelled`)
+- **`payment_history`**: JSONB field containing all individual transactions
+- **`customer_email`**: Customer's email (auto-populated)
+- **`notes`**: Customer's full name (auto-populated)
+
+#### How to Calculate Amount Paid
+
+**DO NOT** use the `amount` field to show how much has been paid. Instead, calculate it from `payment_history`:
+
+```javascript
+// Calculate total amount paid from payment history
+function calculateAmountPaid(payment) {
+  if (!payment.payment_history?.transactions) return 0;
+
+  return payment.payment_history.transactions.reduce((total, transaction) => {
+    return total + Number(transaction.amount || 0);
+  }, 0);
+}
+
+// Example usage
+const payment = {
+  id: 10,
+  amount: 1000, // Total due
+  status: "partial",
+  payment_history: {
+    transactions: [
+      {
+        amount: 100,
+        method: "cash",
+        timestamp: "2024-01-15T10:30:00Z",
+        notes: "First payment",
+      },
+      {
+        amount: 400,
+        method: "bank_transfer",
+        timestamp: "2024-01-20T14:15:00Z",
+        notes: "Second payment",
+      },
+    ],
+  },
+};
+
+const amountPaid = calculateAmountPaid(payment); // Returns 500
+const totalDue = payment.amount; // Returns 1000
+const remaining = totalDue - amountPaid; // Returns 500
+const progress = (amountPaid / totalDue) * 100; // Returns 50%
+```
 
 ### Frontend Implementation
 
-**Payments Manager UI should:**
+#### Payment Display Logic
 
-- Show existing payments (from `GET /api/payments`)
-- For each payment, show "Add Payment" button to add partial amounts
-- Display payment history in a collapsible section
-- Show payment progress: `(amount / total) * 100`
+**For each payment record, display:**
 
-**Payment History Display:**
+1. **Total Due**: `payment.amount` (e.g., "₵1,000.00")
+2. **Amount Paid**: Calculate from `payment_history` (e.g., "₵500.00")
+3. **Remaining**: `totalDue - amountPaid` (e.g., "₵500.00")
+4. **Progress**: `(amountPaid / totalDue) * 100` (e.g., "50%")
+5. **Status**: `payment.status` (e.g., "Partial")
+
+#### Payment History Display
 
 ```javascript
 // Example payment_history structure
 {
   "transactions": [
     {
-      "amount": 2000,
+      "amount": 100,
       "method": "cash",
       "timestamp": "2024-01-15T10:30:00Z",
-      "notes": "Initial deposit"
+      "notes": "First partial payment"
     },
     {
-      "amount": 3000,
+      "amount": 400,
       "method": "bank_transfer",
       "timestamp": "2024-01-20T14:15:00Z",
-      "notes": "Final payment"
+      "notes": "Second partial payment"
+    },
+    {
+      "amount": 500,
+      "method": "cash",
+      "timestamp": "2024-01-25T16:45:00Z",
+      "notes": "Final payment - completed"
     }
   ]
 }
 ```
+
+#### UI Components
+
+**Payment Card Example:**
+
+```javascript
+function PaymentCard({ payment }) {
+  const amountPaid = calculateAmountPaid(payment);
+  const totalDue = payment.amount;
+  const remaining = totalDue - amountPaid;
+  const progress = (amountPaid / totalDue) * 100;
+
+  return (
+    <div className="payment-card">
+      <div className="payment-header">
+        <h3>Payment #{payment.id}</h3>
+        <span className={`status status-${payment.status}`}>
+          {payment.status.toUpperCase()}
+        </span>
+      </div>
+
+      <div className="payment-amounts">
+        <div className="amount-row">
+          <span>Total Due:</span>
+          <span>₵{totalDue.toFixed(2)}</span>
+        </div>
+        <div className="amount-row">
+          <span>Amount Paid:</span>
+          <span>₵{amountPaid.toFixed(2)}</span>
+        </div>
+        <div className="amount-row">
+          <span>Remaining:</span>
+          <span>₵{remaining.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${progress}%` }} />
+        <span className="progress-text">{progress.toFixed(1)}%</span>
+      </div>
+
+      <div className="payment-actions">
+        <button onClick={() => addPartialPayment(payment.id)}>
+          Add Payment
+        </button>
+        <button onClick={() => toggleHistory(payment.id)}>View History</button>
+      </div>
+
+      {showHistory && (
+        <div className="payment-history">
+          {payment.payment_history?.transactions?.map((txn, index) => (
+            <div key={index} className="transaction">
+              <div className="transaction-amount">₵{txn.amount}</div>
+              <div className="transaction-details">
+                <div>
+                  {txn.method} • {txn.notes}
+                </div>
+                <div className="transaction-time">
+                  {new Date(txn.timestamp).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### Key Changes
+
+1. **No Manual Payment Creation**: Payments are automatically created when bookings/orders are created
+2. **Update-Only Payments Manager**: Frontend should remove "Add Payment" button, only show "Add Partial Payment" functionality
+3. **Partial Payment Support**: Use `PATCH /api/payments/:id/add-payment` to add partial amounts
+4. **Payment History Tracking**: Each payment record includes `payment_history` JSONB field with transaction details
+5. **Amount Calculation**: Always calculate amount paid from `payment_history`, never use `amount` field directly
+
+### API Endpoints for Payment Management
+
+#### Get All Payments (Admin Only)
+
+- **URL:** `GET /api/payments`
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Response (200):**
+  ```json
+  {
+    "payments": [
+      {
+        "id": 10,
+        "booking_id": 4,
+        "order_id": null,
+        "amount": 1000.0,
+        "currency": "GHS",
+        "status": "partial",
+        "method": "cash",
+        "provider": "manual",
+        "customer_email": "customer@example.com",
+        "notes": "John Doe",
+        "payment_history": {
+          "transactions": [
+            {
+              "amount": 100,
+              "method": "cash",
+              "timestamp": "2024-01-15T10:30:00Z",
+              "notes": "First partial payment"
+            },
+            {
+              "amount": 400,
+              "method": "bank_transfer",
+              "timestamp": "2024-01-20T14:15:00Z",
+              "notes": "Second partial payment"
+            }
+          ]
+        },
+        "created_at": "2024-01-15T10:00:00Z",
+        "updated_at": "2024-01-20T14:15:00Z",
+        "booking_title": "Wedding Photography",
+        "booking_customer": "John Doe",
+        "order_number": null,
+        "order_customer": null
+      }
+    ]
+  }
+  ```
+
+#### Add Partial Payment (Admin Only)
+
+- **URL:** `PATCH /api/payments/:id/add-payment`
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Body:**
+  ```json
+  {
+    "amount": 200,
+    "method": "cash",
+    "notes": "Additional partial payment"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Payment added successfully",
+    "payment": {
+      "id": 10,
+      "amount": 1000.0,
+      "status": "partial",
+      "payment_history": {
+        "transactions": [
+          {
+            "amount": 100,
+            "method": "cash",
+            "timestamp": "2024-01-15T10:30:00Z",
+            "notes": "First partial payment"
+          },
+          {
+            "amount": 400,
+            "method": "bank_transfer",
+            "timestamp": "2024-01-20T14:15:00Z",
+            "notes": "Second partial payment"
+          },
+          {
+            "amount": 200,
+            "method": "cash",
+            "timestamp": "2024-01-25T16:45:00Z",
+            "notes": "Additional partial payment"
+          }
+        ]
+      }
+    }
+  }
+  ```
+
+#### Update Payment Status (Admin Only)
+
+- **URL:** `PATCH /api/payments/:id/status`
+- **Headers:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
+- **Body:**
+  ```json
+  {
+    "status": "partial"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Payment status updated successfully",
+    "payment": {
+      "id": 10,
+      "status": "partial"
+    }
+  }
+  ```
+
+### Frontend Implementation Checklist
+
+**✅ Required Changes:**
+
+1. **Update Payment Display Logic:**
+
+   - Calculate `amountPaid` from `payment_history.transactions`
+   - Show `totalDue` from `payment.amount`
+   - Calculate `remaining` as `totalDue - amountPaid`
+   - Show progress as `(amountPaid / totalDue) * 100`
+
+2. **Update Payment History Display:**
+
+   - Display all transactions from `payment_history.transactions`
+   - Show transaction amount, method, timestamp, and notes
+   - Format timestamps properly for user display
+
+3. **Update Payment Actions:**
+
+   - Remove "Create Payment" button (payments are auto-created)
+   - Add "Add Partial Payment" button for existing payments
+   - Add "View History" toggle for payment details
+
+4. **Update Status Handling:**
+   - Support "partial" status in status updates
+   - Auto-calculate status based on payment progress
+   - Show appropriate status indicators
+
+**❌ Common Mistakes to Avoid:**
+
+- Don't use `payment.amount` to show amount paid
+- Don't assume payment history is always present
+- Don't forget to handle empty transaction arrays
+- Don't use `amount_paid` field from orders (it's for orders, not payments)
+
+### Status Synchronization
+
+**IMPORTANT**: Payment status and booking/order status are automatically synchronized.
+
+#### How Status Synchronization Works
+
+When you update a payment or add partial payments, the system automatically:
+
+1. **Updates Payment Status**: Based on payment history transactions
+2. **Updates Booking/Order Status**: Automatically recalculates and updates linked booking/order payment status
+3. **Maintains Consistency**: Payment and booking/order statuses stay in sync
+
+#### Status Calculation Logic
+
+**Payment Status:**
+
+- `pending`: No transactions in payment history
+- `partial`: Has transactions but total paid < total due
+- `completed`: Total paid >= total due
+
+**Booking/Order Status:**
+
+- `pending`: No payments made
+- `partial`: Some payments made but not full amount
+- `paid`: Full amount has been paid
+
+#### Automatic Updates
+
+**When you add a partial payment:**
+
+```javascript
+// 1. Payment history is updated
+payment.payment_history.transactions.push(newTransaction);
+
+// 2. Payment status is recalculated
+if (totalPaid < totalDue) payment.status = "partial";
+else if (totalPaid >= totalDue) payment.status = "completed";
+
+// 3. Booking/Order status is automatically updated
+if (totalPaid < totalDue) booking.payment_status = "partial";
+else if (totalPaid >= totalDue) booking.payment_status = "paid";
+```
+
+**When you manually update payment status:**
+
+```javascript
+// 1. Payment status is updated
+payment.status = "partial";
+
+// 2. Booking/Order status is automatically recalculated
+// System looks at payment_history to determine correct status
+```
+
+#### Frontend Benefits
+
+**No Manual Status Management Required:**
+
+- ✅ Payment status updates automatically
+- ✅ Booking/Order status updates automatically
+- ✅ Statuses stay synchronized
+- ✅ No need to manually update multiple records
+
+**What Frontend Should Do:**
+
+- Display the current status from the API response
+- Trust that statuses are automatically synchronized
+- No need to manually sync payment and booking statuses
 
 Database changes (migration required)
 

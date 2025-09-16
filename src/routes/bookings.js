@@ -94,9 +94,9 @@ router.post(
       // Create a pending payment record for the booking
       await pool.query(
         `INSERT INTO payments (
-          booking_id, order_id, amount, currency, status, method, provider, payment_history
-        ) VALUES ($1, NULL, $2, 'GHS', 'pending', 'cash', 'manual', '{"transactions": []}'::jsonb)`,
-        [booking.id, price]
+          booking_id, order_id, amount, currency, status, method, provider, customer_email, notes, payment_history
+        ) VALUES ($1, NULL, $2, 'GHS', 'pending', 'cash', 'manual', $3, $4, '{"transactions": []}'::jsonb)`,
+        [booking.id, price, email, name]
       );
 
       return res.status(201).json({ booking });

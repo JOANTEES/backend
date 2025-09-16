@@ -372,12 +372,31 @@ router.post(
 
         const order = orderResult.rows[0];
 
+        // Get customer info for the payment record
+        const customerRes = await pool.query(
+          "SELECT first_name, last_name, email FROM users WHERE id = $1",
+          [userId]
+        );
+        const customer = customerRes.rows[0];
+        const customerEmail = customer?.email || null;
+        const customerName = customer
+          ? `${customer.first_name} ${customer.last_name}`
+          : null;
+
         // Create a pending payment row for offline methods so admins can reconcile later
         await pool.query(
           `INSERT INTO payments (
-            booking_id, order_id, amount, currency, status, method, provider, payment_history
-          ) VALUES (NULL, $1, $2, $3, 'pending', $4, $5, '{"transactions": []}'::jsonb)`,
-          [order.id, totals.totalAmount, "GHS", "cash", "manual"]
+            booking_id, order_id, amount, currency, status, method, provider, customer_email, notes, payment_history
+          ) VALUES (NULL, $1, $2, $3, 'pending', $4, $5, $6, $7, '{"transactions": []}'::jsonb)`,
+          [
+            order.id,
+            totals.totalAmount,
+            "GHS",
+            "cash",
+            "manual",
+            customerEmail,
+            customerName,
+          ]
         );
 
         // Create order items

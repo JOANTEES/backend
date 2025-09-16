@@ -10,26 +10,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// GET /api/payments (admin only)
-router.get("/", adminAuth, async (_req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT p.id, p.booking_id, p.amount, p.currency, p.method, p.status, p.provider, p.provider_reference, p.paystack_reference, p.transaction_id, p.authorization_code, p.customer_email, p.metadata, p.notes, p.created_at,
-              b.event_title, b.email AS booking_email
-       FROM payments p
-       LEFT JOIN bookings b ON b.id = p.booking_id
-       ORDER BY p.created_at DESC`
-    );
-    return res.json({ payments: result.rows });
-  } catch (error) {
-    console.error("Error fetching payments:", error);
-    return res.status(500).json({
-      message: "Server error while fetching payments",
-      error: error.message,
-    });
-  }
-});
-
 // Note: Payment creation is now automatic when bookings/orders are created
 // Use PATCH /api/payments/:id/add-payment to add partial payments
 
@@ -181,17 +161,32 @@ router.post(
 
         // Try to resolve order by reference saved on orders.payment_reference
         let orderId = null;
+        let customerName = null;
         const orderRes = await pool.query(
           `SELECT id FROM orders WHERE payment_reference = $1`,
           [reference]
         );
         if (orderRes.rows.length > 0) {
           orderId = orderRes.rows[0].id;
+
+          // Get customer info from order
+          const customerRes = await pool.query(
+            "SELECT u.first_name, u.last_name, u.email FROM orders o JOIN users u ON o.user_id = u.id WHERE o.id = $1",
+            [orderId]
+          );
+          const customer = customerRes.rows[0];
+          if (customer) {
+            customerName = `${customer.first_name} ${customer.last_name}`;
+            // Use order customer email if available, otherwise use Paystack email
+            if (customer.email) {
+              customerEmail = customer.email;
+            }
+          }
         }
 
         await pool.query(
-          `INSERT INTO payments (booking_id, order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, metadata, payment_history)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          `INSERT INTO payments (booking_id, order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, notes, metadata, payment_history)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          ON CONFLICT DO NOTHING`,
           [
             bookingId,
@@ -206,6 +201,7 @@ router.post(
             data.id?.toString() || null,
             data.authorization?.authorization_code || null,
             customerEmail || null,
+            customerName || null,
             data.metadata || null,
             JSON.stringify({
               transactions: [
@@ -438,14 +434,26 @@ router.get("/paystack/callback", async (req, res) => {
       const transactionId = verifyJson.data.id?.toString() || null;
       const authorizationCode =
         verifyJson.data.authorization?.authorization_code || null;
-      const customerEmail = verifyJson.data.customer?.email || null;
+
+      // Get customer info from order
+      const customerRes = await pool.query(
+        "SELECT u.first_name, u.last_name, u.email FROM orders o JOIN users u ON o.user_id = u.id WHERE o.id = $1",
+        [orderId]
+      );
+      const customer = customerRes.rows[0];
+      const customerEmail =
+        customer?.email || verifyJson.data.customer?.email || null;
+      const customerName = customer
+        ? `${customer.first_name} ${customer.last_name}`
+        : null;
 
       // Try update existing payment by order_id + provider_reference
       const updated = await pool.query(
         `UPDATE payments
          SET status = 'completed', amount = COALESCE($1, amount), currency = $2, method = 'paystack', provider = 'paystack',
-             paystack_reference = $3, transaction_id = $4, authorization_code = $5, customer_email = COALESCE($6, customer_email), updated_at = CURRENT_TIMESTAMP
-         WHERE order_id = $7 AND provider_reference = $8
+             paystack_reference = $3, transaction_id = $4, authorization_code = $5, customer_email = COALESCE($6, customer_email), 
+             notes = COALESCE($7, notes), updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = $8 AND provider_reference = $9
          RETURNING id`,
         [
           amount || null,
@@ -454,6 +462,7 @@ router.get("/paystack/callback", async (req, res) => {
           transactionId,
           authorizationCode,
           customerEmail,
+          customerName,
           orderId,
           reference,
         ]
@@ -462,8 +471,8 @@ router.get("/paystack/callback", async (req, res) => {
       if (updated.rows.length === 0) {
         // No existing row — insert one
         await pool.query(
-          `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, payment_history)
-           VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8,$9)`,
+          `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, notes, payment_history)
+           VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8,$9,$10)`,
           [
             orderId,
             amount,
@@ -473,6 +482,7 @@ router.get("/paystack/callback", async (req, res) => {
             transactionId,
             authorizationCode,
             customerEmail,
+            customerName,
             JSON.stringify({
               transactions: [
                 {
@@ -709,8 +719,14 @@ router.patch(
       }
 
       const payment = paymentRes.rows[0];
-      const currentAmount = Number(payment.amount || 0);
-      const newAmount = currentAmount + Number(amount);
+
+      // Get current payment history to calculate total paid
+      const currentHistory = payment.payment_history?.transactions || [];
+      const totalPaid = currentHistory.reduce(
+        (sum, txn) => sum + Number(txn.amount || 0),
+        0
+      );
+      const newTotalPaid = totalPaid + Number(amount);
 
       // Create new transaction record
       const newTransaction = {
@@ -720,19 +736,18 @@ router.patch(
         notes: notes || null,
       };
 
-      // Update payment record with new amount and transaction history
+      // Update payment record with new transaction history (amount stays the same - total due)
+      const updatedHistory = {
+        transactions: [...currentHistory, newTransaction],
+      };
+
       const updatedPayment = await pool.query(
         `UPDATE payments 
-         SET amount = $1, 
-             payment_history = payment_history || $2::jsonb,
+         SET payment_history = $1::jsonb,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $3
+         WHERE id = $2
          RETURNING *`,
-        [
-          newAmount,
-          JSON.stringify({ transactions: [newTransaction] }),
-          paymentId,
-        ]
+        [JSON.stringify(updatedHistory), paymentId]
       );
 
       // Recalculate payment status for linked booking or order
@@ -790,6 +805,7 @@ router.patch(
   [
     body("status").isIn([
       "pending",
+      "partial",
       "completed",
       "failed",
       "refunded",
@@ -843,69 +859,7 @@ router.patch(
   }
 );
 
-// Helper: recalc a booking's payment_status based on sum of completed payments vs booking price
-async function recalcBookingPaymentStatus(bookingId) {
-  try {
-    const bookingRes = await pool.query(
-      `SELECT price FROM bookings WHERE id = $1`,
-      [bookingId]
-    );
-    if (bookingRes.rows.length === 0) return;
-    const price = Number(bookingRes.rows[0].price || 0);
-
-    const sumRes = await pool.query(
-      `SELECT COALESCE(SUM(amount), 0)::decimal AS paid FROM payments WHERE booking_id = $1 AND status = 'completed'`,
-      [bookingId]
-    );
-    const paid = Number(sumRes.rows[0].paid || 0);
-
-    let newStatus = "pending";
-    if (paid <= 0) newStatus = "pending";
-    else if (paid > 0 && paid < price) newStatus = "partial";
-    else if (paid >= price) newStatus = "paid";
-
-    await pool.query(
-      `UPDATE bookings SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [newStatus, bookingId]
-    );
-  } catch (e) {
-    console.error("Error recalculating booking payment status:", e);
-  }
-}
-
-// Helper: recalc an order's payment_status based on sum of completed payments vs order total_amount
-async function recalcOrderPaymentStatus(orderId) {
-  try {
-    const orderRes = await pool.query(
-      `SELECT total_amount FROM orders WHERE id = $1`,
-      [orderId]
-    );
-    if (orderRes.rows.length === 0) return;
-    const total = Number(orderRes.rows[0].total_amount || 0);
-
-    const sumRes = await pool.query(
-      `SELECT COALESCE(SUM(amount), 0)::decimal AS paid FROM payments WHERE order_id = $1 AND status = 'completed'`,
-      [orderId]
-    );
-    const paid = Number(sumRes.rows[0].paid || 0);
-
-    let newStatus = "pending";
-    if (paid > 0 && paid < total && total > 0) {
-      newStatus = "partial";
-    } else if (paid >= total && total > 0) {
-      newStatus = "paid";
-    }
-
-    await pool.query(
-      `UPDATE orders SET payment_status = $1, amount_paid = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
-      [newStatus, paid, orderId]
-    );
-  } catch (e) {
-    console.error("Error recalculating order payment status:", e);
-  }
-}
-
-// Helper: recalc a booking's payment_status based on sum of completed payments vs booking price
+// Helper: recalc a booking's payment_status based on payment history transactions vs booking price
 async function recalcBookingPaymentStatus(bookingId) {
   try {
     const bookingRes = await pool.query(
@@ -915,16 +869,29 @@ async function recalcBookingPaymentStatus(bookingId) {
     if (bookingRes.rows.length === 0) return;
     const total = Number(bookingRes.rows[0].price || 0);
 
-    const sumRes = await pool.query(
-      `SELECT COALESCE(SUM(amount), 0)::decimal AS paid FROM payments WHERE booking_id = $1 AND status = 'completed'`,
+    // Get all payments for this booking and calculate total paid from payment_history
+    const paymentsRes = await pool.query(
+      `SELECT payment_history FROM payments WHERE booking_id = $1`,
       [bookingId]
     );
-    const paid = Number(sumRes.rows[0].paid || 0);
+
+    let totalPaid = 0;
+    for (const payment of paymentsRes.rows) {
+      if (payment.payment_history?.transactions) {
+        const paymentTotal = payment.payment_history.transactions.reduce(
+          (sum, txn) => {
+            return sum + Number(txn.amount || 0);
+          },
+          0
+        );
+        totalPaid += paymentTotal;
+      }
+    }
 
     let newStatus = "pending";
-    if (paid > 0 && paid < total && total > 0) {
+    if (totalPaid > 0 && totalPaid < total && total > 0) {
       newStatus = "partial";
-    } else if (paid >= total && total > 0) {
+    } else if (totalPaid >= total && total > 0) {
       newStatus = "paid";
     }
 
@@ -934,6 +901,51 @@ async function recalcBookingPaymentStatus(bookingId) {
     );
   } catch (e) {
     console.error("Error recalculating booking payment status:", e);
+  }
+}
+
+// Helper: recalc an order's payment_status based on payment history transactions vs order total_amount
+async function recalcOrderPaymentStatus(orderId) {
+  try {
+    const orderRes = await pool.query(
+      `SELECT total_amount FROM orders WHERE id = $1`,
+      [orderId]
+    );
+    if (orderRes.rows.length === 0) return;
+    const total = Number(orderRes.rows[0].total_amount || 0);
+
+    // Get all payments for this order and calculate total paid from payment_history
+    const paymentsRes = await pool.query(
+      `SELECT payment_history FROM payments WHERE order_id = $1`,
+      [orderId]
+    );
+
+    let totalPaid = 0;
+    for (const payment of paymentsRes.rows) {
+      if (payment.payment_history?.transactions) {
+        const paymentTotal = payment.payment_history.transactions.reduce(
+          (sum, txn) => {
+            return sum + Number(txn.amount || 0);
+          },
+          0
+        );
+        totalPaid += paymentTotal;
+      }
+    }
+
+    let newStatus = "pending";
+    if (totalPaid > 0 && totalPaid < total && total > 0) {
+      newStatus = "partial";
+    } else if (totalPaid >= total && total > 0) {
+      newStatus = "paid";
+    }
+
+    await pool.query(
+      `UPDATE orders SET payment_status = $1, amount_paid = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+      [newStatus, totalPaid, orderId]
+    );
+  } catch (e) {
+    console.error("Error recalculating order payment status:", e);
   }
 }
 
