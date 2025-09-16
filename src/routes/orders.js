@@ -345,8 +345,8 @@ router.post(
             delivery_zone_id, pickup_location_id, delivery_address_id,
             delivery_address, subtotal, tax_amount, shipping_fee,
             large_order_fee, special_delivery_fee, total_amount,
-            customer_notes, payment_status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            customer_notes, payment_status, amount_paid
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
           RETURNING id, order_number, status, payment_status, created_at
         `,
           [
@@ -366,10 +366,19 @@ router.post(
             totals.totalAmount,
             customerNotes,
             paymentMethod === "online" ? "pending" : "pending",
+            0, // amount_paid starts at 0
           ]
         );
 
         const order = orderResult.rows[0];
+
+        // Create a pending payment row for offline methods so admins can reconcile later
+        await pool.query(
+          `INSERT INTO payments (
+            booking_id, order_id, amount, currency, status, method, provider, payment_history
+          ) VALUES (NULL, $1, $2, $3, 'pending', $4, $5, '{"transactions": []}'::jsonb)`,
+          [order.id, totals.totalAmount, "GHS", "cash", "manual"]
+        );
 
         // Create order items
         for (const item of cartItems) {
@@ -775,6 +784,69 @@ router.get("/admin", adminAuth, async (req, res) => {
 });
 module.exports = router;
 
+// PATCH /api/orders/:id/status - Admin: update order status (and sync payments)
+router.patch(
+  "/:id/status",
+  adminAuth,
+  [
+    body("status").isIn([
+      "pending",
+      "confirmed",
+      "processing",
+      "ready_for_pickup",
+      "shipped",
+      "out_for_delivery",
+      "delivered",
+      "completed",
+      "cancelled",
+      "refunded",
+    ]),
+  ],
+  async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      if (isNaN(orderId)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid order ID" });
+      }
+
+      const { status } = req.body;
+
+      const result = await pool.query(
+        `UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, status`,
+        [status, orderId]
+      );
+      if (result.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Order not found" });
+      }
+
+      // If order moved to completed, mark any pending payments as completed
+      if (status === "completed") {
+        await pool.query(
+          `UPDATE payments SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE order_id = $1 AND status <> 'completed'`,
+          [orderId]
+        );
+        // Also ensure payment_status reflects paid
+        await pool.query(
+          `UPDATE orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [orderId]
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: "Order status updated",
+        order: result.rows[0],
+      });
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      return res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+);
 // POST /api/orders/:id/pay/initialize - Initialize Paystack payment for an order (customer)
 router.post("/:id/pay/initialize", authenticateUser, async (req, res) => {
   try {

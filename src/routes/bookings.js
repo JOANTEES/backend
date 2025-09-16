@@ -89,7 +89,17 @@ router.post(
         ]
       );
 
-      return res.status(201).json({ booking: insert.rows[0] });
+      const booking = insert.rows[0];
+
+      // Create a pending payment record for the booking
+      await pool.query(
+        `INSERT INTO payments (
+          booking_id, order_id, amount, currency, status, method, provider, payment_history
+        ) VALUES ($1, NULL, $2, 'GHS', 'pending', 'cash', 'manual', '{"transactions": []}'::jsonb)`,
+        [booking.id, price]
+      );
+
+      return res.status(201).json({ booking });
     } catch (error) {
       console.error("Error creating booking:", error);
       return res.status(500).json({

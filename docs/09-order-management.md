@@ -358,22 +358,85 @@ The system supports 4 combinations:
 
 ### Payments for Orders
 
-Admins can record payments against orders (cash on delivery/pickup) and the system updates the order's payment status automatically.
+**Automatic Payment Creation:** Orders and bookings now automatically create payment records when created. No manual payment creation needed.
 
-#### Admin: Record Payment for an Order
+#### Admin: Add Partial Payment to Existing Payment
 
 ```http
-POST /api/payments
+PATCH /api/payments/:id/add-payment
 Authorization: Bearer <admin_token>
 Content-Type: application/json
 
 {
-  "order_id": 123,
-  "amount": 100.0,
+  "amount": 50.0,
   "method": "cash", // cash | bank_transfer | check | paystack
-  "status": "completed", // pending | completed | failed | refunded
-  "currency": "GHS",
-  "notes": "Paid at pickup"
+  "notes": "Partial payment received"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Payment added successfully",
+  "payment": {
+    "id": 456,
+    "order_id": 123,
+    "amount": 200.0,
+    "currency": "GHS",
+    "status": "completed",
+    "payment_history": {
+      "transactions": [
+        {
+          "amount": 150.0,
+          "method": "bank_transfer",
+          "timestamp": "2024-01-15T10:30:00Z",
+          "notes": "Initial payment"
+        },
+        {
+          "amount": 50.0,
+          "method": "cash",
+          "timestamp": "2024-01-20T14:15:00Z",
+          "notes": "Partial payment received"
+        }
+      ]
+    }
+  }
+}
+```
+
+#### Admin: List All Payments
+
+```http
+GET /api/payments
+Authorization: Bearer <admin_token>
+```
+
+**Response:**
+
+```json
+{
+  "payments": [
+    {
+      "id": 456,
+      "booking_id": 789,
+      "order_id": null,
+      "amount": 5000.00,
+      "currency": "GHS",
+      "status": "partial",
+      "method": "cash",
+      "provider": "manual",
+      "payment_history": {
+        "transactions": [...]
+      },
+      "booking_title": "Wedding Event",
+      "booking_customer": "John Doe",
+      "order_number": null,
+      "order_customer": null,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ]
 }
 ```
 
@@ -493,6 +556,116 @@ Frontend flow summary (test)
 5. Confirm: `GET /api/orders/:id` → `payment_status` should be `paid`.
 
 ---
+
+### Payments Lifecycle & Admin Flows
+
+Offline orders (on_delivery, on_pickup)
+
+- When an order is created with `paymentMethod: on_delivery | on_pickup`, the backend now also inserts a pending payment row:
+  - `payments`: { order_id, amount=order.total_amount, currency="GHS", method="cash", provider="manual", status="pending" }
+- Admin can later mark the payment as completed in the Payments table or by updating the order status (see below).
+
+Online orders (Paystack)
+
+- Inline (recommended):
+  1. `POST /api/orders` with `paymentMethod: "online"` → creates a checkout session (no order yet)
+  2. `POST /api/payments/paystack/initialize-session` → returns `{ reference, amount (kobo), currency:"GHS", email }`
+  3. Frontend opens Paystack modal with those values
+  4. On success, webhook/callback creates a paid order and inserts a completed payment. If webhooks are unavailable locally, call `POST /api/payments/paystack/verify` with `{ reference }` to finalize.
+- Redirect (legacy): If you prefer server-side init, response includes `authorization_url` and you redirect the user.
+
+Provider mapping (admin-created payments)
+
+- `POST /api/payments` now sets `provider` based on `method`:
+  - `method` in ["cash","bank_transfer","check"] → `provider: "manual"`
+  - `method === "paystack"` → `provider: "paystack"`
+
+Bidirectional status sync
+
+- Payment -> Order: When a payment's status becomes `completed`:
+  - Order `payment_status` is recalculated to `paid` or `partial` based on total paid vs order total.
+  - Order `amount_paid` is updated to reflect the sum of completed payments.
+  - Order `status` is advanced to `completed` if it is not already terminal (`completed|cancelled|refunded`).
+- Order -> Payments: Admin can update an order's status:
+  - `PATCH /api/orders/:id/status` (admin-only)
+  - When the order is set to `completed`, any linked non-completed payments are set to `completed`, and `payment_status` becomes `paid`.
+
+Partial payments support
+
+- Orders now support partial payments for large bookings (e.g., deposits):
+  - `orders.amount_paid` tracks the total amount paid across all completed payments.
+  - `orders.payment_status` can be `pending`, `partial`, or `paid`.
+  - Multiple payments can be made against the same order.
+- Admin workflow for partial payments:
+  1. Create order for large booking (e.g., ₵5,000 event)
+  2. Customer pays ₵2,000 deposit → order shows `payment_status: "partial"`, `amount_paid: 2000`
+  3. Customer pays remaining ₵3,000 → order shows `payment_status: "paid"`, `amount_paid: 5000`
+- Frontend can display payment progress: `amount_paid / total_amount * 100`
+
+Admin endpoints recap
+
+- `PATCH /api/orders/:id/status` (admin)
+  - Body: `{ "status": "completed" | "processing" | ... }`
+  - On `completed`: marks linked payments as `completed` and order `payment_status` as `paid`.
+- `POST /api/payments` (admin)
+  - Creates manual payments. Use `method` to set the payment type; `provider` is auto-derived.
+
+Frontend notes
+
+- Inline: Always use the initializer response for `reference`, `amount` (kobo), `currency: "GHS"`, and `email`.
+- After inline success in local dev: call `POST /api/payments/paystack/verify` with `{ reference }` when webhooks cannot reach your machine.
+
+## New Payment Management Flow
+
+### Key Changes
+
+1. **No Manual Payment Creation**: Payments are automatically created when bookings/orders are created
+2. **Update-Only Payments Manager**: Frontend should remove "Add Payment" button, only show "Update Payment" functionality
+3. **Partial Payment Support**: Use `PATCH /api/payments/:id/add-payment` to add partial amounts
+4. **Payment History Tracking**: Each payment record includes `payment_history` JSONB field with transaction details
+
+### Frontend Implementation
+
+**Payments Manager UI should:**
+
+- Show existing payments (from `GET /api/payments`)
+- For each payment, show "Add Payment" button to add partial amounts
+- Display payment history in a collapsible section
+- Show payment progress: `(amount / total) * 100`
+
+**Payment History Display:**
+
+```javascript
+// Example payment_history structure
+{
+  "transactions": [
+    {
+      "amount": 2000,
+      "method": "cash",
+      "timestamp": "2024-01-15T10:30:00Z",
+      "notes": "Initial deposit"
+    },
+    {
+      "amount": 3000,
+      "method": "bank_transfer",
+      "timestamp": "2024-01-20T14:15:00Z",
+      "notes": "Final payment"
+    }
+  ]
+}
+```
+
+Database changes (migration required)
+
+- Added `orders.amount_paid` column to track partial payments.
+- Updated `orders.payment_status` constraint to include `'partial'` status.
+- Run migrations: `node src/database/migrate.js` after pulling latest changes.
+
+Order response fields
+
+- Orders now include `amount_paid` field showing total amount paid.
+- `payment_status` can be `pending`, `partial`, or `paid`.
+- Calculate payment progress: `(amount_paid / total_amount) * 100`
 
 ## Delivery Zones System (Available Now)
 

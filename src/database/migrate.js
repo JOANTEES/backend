@@ -95,6 +95,8 @@ async function migrate() {
     );`,
     // Ensure order_id exists if payments existed before
     "ALTER TABLE payments ADD COLUMN IF NOT EXISTS order_id INTEGER;",
+    // Add payment_history JSONB field to payments table for tracking individual payment transactions
+    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_history JSONB DEFAULT '{\"transactions\": []}'::jsonb;",
     "CREATE INDEX IF NOT EXISTS idx_payments_booking_id ON payments(booking_id);",
     "CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);",
@@ -136,8 +138,9 @@ async function migrate() {
       
       -- Payment Information
       payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('online', 'on_delivery', 'on_pickup')),
-      payment_status VARCHAR(50) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'failed', 'refunded', 'cancelled')),
+      payment_status VARCHAR(50) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'partial', 'paid', 'failed', 'refunded', 'cancelled')),
       payment_reference VARCHAR(255),
+      amount_paid DECIMAL(10,2) DEFAULT 0,
       
       -- Delivery Information
       delivery_method VARCHAR(20) NOT NULL CHECK (delivery_method IN ('delivery', 'pickup')),

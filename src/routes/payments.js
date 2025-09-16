@@ -30,73 +30,8 @@ router.get("/", adminAuth, async (_req, res) => {
   }
 });
 
-// POST /api/payments (admin only) - record a payment (for offline or after webhook)
-router.post(
-  "/",
-  adminAuth,
-  [
-    body("booking_id").optional().isInt({ min: 1 }),
-    body("order_id").optional().isInt({ min: 1 }),
-    body("amount").isFloat({ min: 0.01 }),
-    body("currency").optional().isString(),
-    body("status")
-      .optional()
-      .isIn(["pending", "completed", "failed", "refunded"]),
-    body("method")
-      .optional()
-      .isIn(["cash", "bank_transfer", "check", "paystack"]),
-    body("notes").optional().isString(),
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty())
-        return res
-          .status(400)
-          .json({ message: "Validation failed", errors: errors.array() });
-
-      const {
-        booking_id,
-        order_id,
-        amount,
-        currency = "GHS",
-        status = "pending",
-        method = "cash",
-        notes,
-      } = req.body;
-
-      if (!booking_id && !order_id) {
-        return res.status(400).json({
-          message: "Either booking_id or order_id is required",
-        });
-      }
-
-      const insert = await pool.query(
-        `INSERT INTO payments (booking_id, order_id, amount, currency, status, method, provider, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,'paystack', CURRENT_TIMESTAMP)
-         RETURNING id, booking_id, order_id, amount, currency, method, status, provider, created_at`,
-        [booking_id || null, order_id || null, amount, currency, status, method]
-      );
-      const payment = insert.rows[0];
-
-      // Recalculate linked booking payment status, if any
-      if (payment.booking_id) {
-        await recalcBookingPaymentStatus(payment.booking_id);
-      }
-      if (payment.order_id) {
-        await recalcOrderPaymentStatus(payment.order_id);
-      }
-
-      return res.status(201).json({ payment });
-    } catch (error) {
-      console.error("Error creating payment:", error);
-      return res.status(500).json({
-        message: "Server error while creating payment",
-        error: error.message,
-      });
-    }
-  }
-);
+// Note: Payment creation is now automatic when bookings/orders are created
+// Use PATCH /api/payments/:id/add-payment to add partial payments
 
 // POST /api/payments/paystack/initialize - create Paystack transaction (client or server initiated)
 router.post(
@@ -255,8 +190,8 @@ router.post(
         }
 
         await pool.query(
-          `INSERT INTO payments (booking_id, order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          `INSERT INTO payments (booking_id, order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, metadata, payment_history)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT DO NOTHING`,
           [
             bookingId,
@@ -272,6 +207,16 @@ router.post(
             data.authorization?.authorization_code || null,
             customerEmail || null,
             data.metadata || null,
+            JSON.stringify({
+              transactions: [
+                {
+                  amount: amount,
+                  method: "paystack",
+                  timestamp: new Date().toISOString(),
+                  notes: "Online payment",
+                },
+              ],
+            }),
           ]
         );
 
@@ -342,8 +287,8 @@ router.post(
                   delivery_zone_id, pickup_location_id, delivery_address_id,
                   delivery_address, subtotal, tax_amount, shipping_fee,
                   large_order_fee, special_delivery_fee, total_amount,
-                  customer_notes, payment_status, payment_reference
-                ) VALUES ($1,$2,'online',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULL,'paid',$14)
+                  customer_notes, payment_status, payment_reference, amount_paid
+                ) VALUES ($1,$2,'online',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULL,'paid',$14,$15)
                 RETURNING id`,
                 [
                   s.user_id,
@@ -362,6 +307,7 @@ router.post(
                   s.special_delivery_fee,
                   s.total_amount,
                   reference,
+                  s.total_amount, // amount_paid = total_amount for paid orders
                 ]
               );
               const newOrderId = orderInsert.rows[0].id;
@@ -516,8 +462,8 @@ router.get("/paystack/callback", async (req, res) => {
       if (updated.rows.length === 0) {
         // No existing row — insert one
         await pool.query(
-          `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email)
-           VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8)`,
+          `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, payment_history)
+           VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8,$9)`,
           [
             orderId,
             amount,
@@ -527,6 +473,16 @@ router.get("/paystack/callback", async (req, res) => {
             transactionId,
             authorizationCode,
             customerEmail,
+            JSON.stringify({
+              transactions: [
+                {
+                  amount: amount,
+                  method: "paystack",
+                  timestamp: new Date().toISOString(),
+                  notes: "Online payment",
+                },
+              ],
+            }),
           ]
         );
       }
@@ -550,8 +506,8 @@ router.get("/paystack/callback", async (req, res) => {
             delivery_zone_id, pickup_location_id, delivery_address_id,
             delivery_address, subtotal, tax_amount, shipping_fee,
             large_order_fee, special_delivery_fee, total_amount,
-            customer_notes, payment_status, payment_reference
-          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13)
+            customer_notes, payment_status, payment_reference, amount_paid
+          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13,$14)
           RETURNING id`,
           [
             s.user_id,
@@ -567,6 +523,7 @@ router.get("/paystack/callback", async (req, res) => {
             s.special_delivery_fee,
             s.total_amount,
             reference,
+            s.total_amount, // amount_paid = total_amount for paid orders
           ]
         );
         const newOrderId = orderInsert.rows[0].id;
@@ -674,8 +631,8 @@ router.post("/paystack/verify", async (req, res) => {
             delivery_zone_id, pickup_location_id, delivery_address_id,
             delivery_address, subtotal, tax_amount, shipping_fee,
             large_order_fee, special_delivery_fee, total_amount,
-            customer_notes, payment_status, payment_reference
-          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13)
+            customer_notes, payment_status, payment_reference, amount_paid
+          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13,$14)
           RETURNING id`,
           [
             s.user_id,
@@ -691,6 +648,7 @@ router.post("/paystack/verify", async (req, res) => {
             s.special_delivery_fee,
             s.total_amount,
             reference,
+            s.total_amount, // amount_paid = total_amount for paid orders
           ]
         );
         orderId = orderInsert.rows[0].id;
@@ -716,7 +674,114 @@ router.post("/paystack/verify", async (req, res) => {
   }
 });
 
-module.exports = router;
+// PATCH /api/payments/:id/add-payment - Add partial payment amount (admin only)
+router.patch(
+  "/:id/add-payment",
+  adminAuth,
+  [
+    body("amount").isFloat({ min: 0.01 }),
+    body("method").isIn(["cash", "bank_transfer", "check", "paystack"]),
+    body("notes").optional().isString(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res
+          .status(400)
+          .json({ message: "Validation failed", errors: errors.array() });
+      }
+
+      const paymentId = parseInt(req.params.id);
+      if (isNaN(paymentId)) {
+        return res.status(400).json({ message: "Invalid payment ID" });
+      }
+
+      const { amount, method, notes } = req.body;
+
+      // Get current payment record
+      const paymentRes = await pool.query(
+        `SELECT * FROM payments WHERE id = $1`,
+        [paymentId]
+      );
+      if (paymentRes.rows.length === 0) {
+        return res.status(404).json({ message: "Payment not found" });
+      }
+
+      const payment = paymentRes.rows[0];
+      const currentAmount = Number(payment.amount || 0);
+      const newAmount = currentAmount + Number(amount);
+
+      // Create new transaction record
+      const newTransaction = {
+        amount: Number(amount),
+        method: method,
+        timestamp: new Date().toISOString(),
+        notes: notes || null,
+      };
+
+      // Update payment record with new amount and transaction history
+      const updatedPayment = await pool.query(
+        `UPDATE payments 
+         SET amount = $1, 
+             payment_history = payment_history || $2::jsonb,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3
+         RETURNING *`,
+        [
+          newAmount,
+          JSON.stringify({ transactions: [newTransaction] }),
+          paymentId,
+        ]
+      );
+
+      // Recalculate payment status for linked booking or order
+      if (payment.booking_id) {
+        await recalcBookingPaymentStatus(payment.booking_id);
+      }
+      if (payment.order_id) {
+        await recalcOrderPaymentStatus(payment.order_id);
+      }
+
+      return res.json({
+        success: true,
+        message: "Payment added successfully",
+        payment: updatedPayment.rows[0],
+      });
+    } catch (error) {
+      console.error("Error adding payment:", error);
+      return res.status(500).json({
+        message: "Server error while adding payment",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// GET /api/payments - List all payments with history (admin only)
+router.get("/", adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+         p.id, p.booking_id, p.order_id, p.amount, p.currency, p.status, p.method, p.provider, 
+         p.payment_history, p.created_at, p.updated_at,
+         b.event_title as booking_title, b.name as booking_customer,
+         o.order_number, u.email as order_customer
+       FROM payments p
+       LEFT JOIN bookings b ON p.booking_id = b.id
+       LEFT JOIN orders o ON p.order_id = o.id
+       LEFT JOIN users u ON o.user_id = u.id
+       ORDER BY p.created_at DESC`
+    );
+    return res.json({ payments: result.rows });
+  } catch (error) {
+    console.error("Error fetching payments:", error);
+    return res.status(500).json({
+      message: "Server error while fetching payments",
+      error: error.message,
+    });
+  }
+});
 
 // PATCH /api/payments/:id/status (admin) — persist status changes and update booking
 router.patch(
@@ -758,6 +823,13 @@ router.patch(
       }
       if (payment.order_id) {
         await recalcOrderPaymentStatus(payment.order_id);
+        // If payment is completed, optionally advance order status to 'completed'
+        if (status === "completed") {
+          await pool.query(
+            `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status NOT IN ('completed','cancelled','refunded')`,
+            [payment.order_id]
+          );
+        }
       }
 
       return res.json({ payment });
@@ -818,13 +890,51 @@ async function recalcOrderPaymentStatus(orderId) {
     const paid = Number(sumRes.rows[0].paid || 0);
 
     let newStatus = "pending";
-    if (paid >= total && total > 0) newStatus = "paid";
+    if (paid > 0 && paid < total && total > 0) {
+      newStatus = "partial";
+    } else if (paid >= total && total > 0) {
+      newStatus = "paid";
+    }
 
     await pool.query(
-      `UPDATE orders SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [newStatus, orderId]
+      `UPDATE orders SET payment_status = $1, amount_paid = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+      [newStatus, paid, orderId]
     );
   } catch (e) {
     console.error("Error recalculating order payment status:", e);
   }
 }
+
+// Helper: recalc a booking's payment_status based on sum of completed payments vs booking price
+async function recalcBookingPaymentStatus(bookingId) {
+  try {
+    const bookingRes = await pool.query(
+      `SELECT price FROM bookings WHERE id = $1`,
+      [bookingId]
+    );
+    if (bookingRes.rows.length === 0) return;
+    const total = Number(bookingRes.rows[0].price || 0);
+
+    const sumRes = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0)::decimal AS paid FROM payments WHERE booking_id = $1 AND status = 'completed'`,
+      [bookingId]
+    );
+    const paid = Number(sumRes.rows[0].paid || 0);
+
+    let newStatus = "pending";
+    if (paid > 0 && paid < total && total > 0) {
+      newStatus = "partial";
+    } else if (paid >= total && total > 0) {
+      newStatus = "paid";
+    }
+
+    await pool.query(
+      `UPDATE bookings SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [newStatus, bookingId]
+    );
+  } catch (e) {
+    console.error("Error recalculating booking payment status:", e);
+  }
+}
+
+module.exports = router;
