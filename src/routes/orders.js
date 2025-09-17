@@ -100,6 +100,7 @@ router.post(
     body("deliveryMethod").isIn(["delivery", "pickup"]),
     body("deliveryAddressId").optional().isInt({ min: 1 }),
     body("pickupLocationId").optional().isInt({ min: 1 }),
+    body("locationLink").optional().isString(),
     body("customerNotes").optional().trim().isLength({ max: 500 }),
   ],
   async (req, res) => {
@@ -119,6 +120,7 @@ router.post(
         deliveryMethod,
         deliveryAddressId,
         pickupLocationId,
+        locationLink,
         customerNotes,
       } = req.body;
 
@@ -260,7 +262,12 @@ router.post(
             landmark: addr.landmark,
             additionalInstructions: addr.additional_instructions,
             contactPhone: addr.contact_phone,
-            googleMapsLink: addr.google_maps_link,
+            googleMapsLink:
+              locationLink &&
+              typeof locationLink === "string" &&
+              locationLink.trim().length > 0
+                ? locationLink.trim()
+                : addr.google_maps_link,
           };
         }
       }
@@ -803,6 +810,126 @@ router.get("/admin", adminAuth, async (req, res) => {
       message: "Failed to fetch admin orders",
       error: error.message,
     });
+  }
+});
+
+// GET /api/orders/admin/:id - Admin: get single order with full details
+router.get("/admin/:id(\\d+)", adminAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    if (isNaN(orderId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order ID" });
+    }
+
+    // Fetch order with delivery/pickup names
+    const orderResult = await pool.query(
+      `
+      SELECT 
+        o.*, 
+        pl.name AS pickup_location_name, pl.contact_phone AS pickup_phone, pl.google_maps_link AS pickup_maps_link,
+        dz.name AS delivery_zone_name, dz.delivery_fee AS zone_delivery_fee,
+        u.email AS customer_email
+      FROM orders o
+      LEFT JOIN pickup_locations pl ON o.pickup_location_id = pl.id
+      LEFT JOIN delivery_zones dz ON o.delivery_zone_id = dz.id
+      LEFT JOIN users u ON u.id = o.user_id
+      WHERE o.id = $1
+    `,
+      [orderId]
+    );
+
+    if (orderResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    }
+
+    const order = orderResult.rows[0];
+
+    // Fetch order items
+    const itemsResult = await pool.query(
+      `
+      SELECT 
+        oi.*, p.name as current_product_name, p.image_url as current_image_url
+      FROM order_items oi
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE oi.order_id = $1
+      ORDER BY oi.created_at
+    `,
+      [orderId]
+    );
+
+    const orderItems = itemsResult.rows.map((item) => ({
+      id: item.id.toString(),
+      productId: item.product_id ? item.product_id.toString() : null,
+      productName: item.product_name,
+      productDescription: item.product_description,
+      productImageUrl: item.product_image_url,
+      size: item.size,
+      color: item.color,
+      quantity: item.quantity,
+      unitPrice: parseFloat(item.unit_price),
+      subtotal: parseFloat(item.subtotal),
+      requiresSpecialDelivery: item.requires_special_delivery,
+      currentProductName: item.current_product_name,
+      currentImageUrl: item.current_image_url,
+    }));
+
+    const orderData = {
+      id: order.id.toString(),
+      orderNumber: order.order_number,
+      status: order.status,
+      paymentMethod: order.payment_method,
+      paymentStatus: order.payment_status,
+      deliveryMethod: order.delivery_method,
+      deliveryZone: order.delivery_zone_id
+        ? {
+            id: order.delivery_zone_id.toString(),
+            name: order.delivery_zone_name,
+            deliveryFee: order.zone_delivery_fee
+              ? parseFloat(order.zone_delivery_fee)
+              : null,
+          }
+        : null,
+      pickupLocation: order.pickup_location_id
+        ? {
+            id: order.pickup_location_id.toString(),
+            name: order.pickup_location_name,
+            contactPhone: order.pickup_phone || null,
+            mapsLink: order.pickup_maps_link || null,
+          }
+        : null,
+      deliveryAddress: order.delivery_address,
+      totals: {
+        subtotal: parseFloat(order.subtotal),
+        taxAmount: parseFloat(order.tax_amount),
+        shippingFee: parseFloat(order.shipping_fee),
+        largeOrderFee: parseFloat(order.large_order_fee),
+        specialDeliveryFee: parseFloat(order.special_delivery_fee),
+        totalAmount: parseFloat(order.total_amount),
+        amountPaid: order.amount_paid ? parseFloat(order.amount_paid) : 0,
+      },
+      customerNotes: order.customer_notes,
+      notes: order.notes,
+      customerEmail: order.customer_email || null,
+      estimatedDeliveryDate: order.estimated_delivery_date,
+      actualDeliveryDate: order.actual_delivery_date
+        ? order.actual_delivery_date.toISOString()
+        : null,
+      createdAt: order.created_at.toISOString(),
+      updatedAt: order.updated_at ? order.updated_at.toISOString() : null,
+      confirmedAt: order.confirmed_at ? order.confirmed_at.toISOString() : null,
+      shippedAt: order.shipped_at ? order.shipped_at.toISOString() : null,
+      deliveredAt: order.delivered_at ? order.delivered_at.toISOString() : null,
+      items: orderItems,
+    };
+
+    return res.json({ success: true, order: orderData });
+  } catch (error) {
+    console.error("Error fetching admin order:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 module.exports = router;

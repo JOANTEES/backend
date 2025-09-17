@@ -674,6 +674,32 @@ router.post("/paystack/verify", async (req, res) => {
       }
       if (sessionRes.rows.length > 0 && data.status === "success") {
         const s = sessionRes.rows[0];
+        // Build delivery_address JSON if delivery
+        let deliveryAddressJson = null;
+        if (s.delivery_method === "delivery" && s.delivery_address_id) {
+          const addrRes = await pool.query(
+            `SELECT ca.*, gr.name as region_name, gc.name as city_name
+             FROM customer_addresses ca
+             JOIN ghana_regions gr ON ca.region_id = gr.id
+             JOIN ghana_cities gc ON ca.city_id = gc.id
+             WHERE ca.id = $1`,
+            [s.delivery_address_id]
+          );
+          if (addrRes.rows.length > 0) {
+            const addr = addrRes.rows[0];
+            deliveryAddressJson = {
+              regionId: addr.region_id,
+              regionName: addr.region_name,
+              cityId: addr.city_id,
+              cityName: addr.city_name,
+              areaName: addr.area_name,
+              landmark: addr.landmark,
+              additionalInstructions: addr.additional_instructions,
+              contactPhone: addr.contact_phone,
+              googleMapsLink: addr.google_maps_link,
+            };
+          }
+        }
         console.log("[VERIFY] Found session", {
           sessionId: s.id,
           userId: s.user_id,
@@ -690,7 +716,7 @@ router.post("/paystack/verify", async (req, res) => {
             delivery_address, subtotal, tax_amount, shipping_fee,
             large_order_fee, special_delivery_fee, total_amount,
             customer_notes, payment_status, payment_reference, amount_paid
-          ) VALUES ($1,$2,'online',$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,NULL,'paid',$13,$14)
+          ) VALUES ($1,$2,'online',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULL,'paid',$14,$15)
           RETURNING id`,
           [
             s.user_id,
@@ -699,6 +725,7 @@ router.post("/paystack/verify", async (req, res) => {
             s.delivery_zone_id,
             s.pickup_location_id,
             s.delivery_address_id,
+            deliveryAddressJson ? JSON.stringify(deliveryAddressJson) : null,
             s.subtotal,
             s.tax_amount,
             s.shipping_fee,

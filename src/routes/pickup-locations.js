@@ -158,6 +158,7 @@ router.post(
     body("contactPhone").optional().trim().isLength({ max: 30 }),
     body("contactEmail").optional().isEmail(),
     body("operatingHours").optional().isObject(),
+    body("googleMapsLink").optional().isString(),
   ],
   async (req, res) => {
     try {
@@ -182,6 +183,7 @@ router.post(
         contactEmail,
         operatingHours,
       } = req.body;
+      let { googleMapsLink } = req.body;
 
       // Get region and city names for Google Maps link generation
       const regionResult = await pool.query(
@@ -200,14 +202,17 @@ router.post(
         });
       }
 
-      // Generate Google Maps link
-      const mapsLink = generatePickupMapsLink({
-        regionName: regionResult.rows[0].name,
-        cityName: cityResult.rows[0].name,
-        areaName,
-        landmark,
-        additionalInstructions,
-      });
+      // Determine Google Maps link (admin override takes precedence)
+      const mapsLink =
+        googleMapsLink && googleMapsLink.trim().length > 0
+          ? googleMapsLink.trim()
+          : generatePickupMapsLink({
+              regionName: regionResult.rows[0].name,
+              cityName: cityResult.rows[0].name,
+              areaName,
+              landmark,
+              additionalInstructions,
+            });
 
       // Create pickup location
       const result = await pool.query(
@@ -284,6 +289,7 @@ router.put(
     body("contactEmail").optional().isEmail(),
     body("operatingHours").optional().isObject(),
     body("isActive").optional().isBoolean(),
+    body("googleMapsLink").optional().isString(),
   ],
   async (req, res) => {
     try {
@@ -330,6 +336,7 @@ router.put(
         operatingHours,
         isActive,
       } = req.body;
+      let { googleMapsLink } = req.body;
 
       // Build update query dynamically
       const updateFields = [];
@@ -392,6 +399,7 @@ router.put(
 
       // If location details changed, regenerate Google Maps link
       if (
+        googleMapsLink !== undefined ||
         regionId !== undefined ||
         cityId !== undefined ||
         areaName !== undefined ||
@@ -408,34 +416,43 @@ router.put(
             ? additionalInstructions
             : existingLocation.rows[0].additional_instructions;
 
-        // Get region and city names
-        const regionResult = await pool.query(
-          "SELECT name FROM ghana_regions WHERE id = $1",
-          [finalRegionId]
-        );
-        const cityResult = await pool.query(
-          "SELECT name FROM ghana_cities WHERE id = $1",
-          [finalCityId]
-        );
+        // If admin provided a googleMapsLink, use it as-is.
+        // Otherwise, regenerate based on the latest address fields.
+        if (googleMapsLink !== undefined) {
+          updateFields.push(`google_maps_link = $${paramCount++}`);
+          updateValues.push(
+            googleMapsLink && googleMapsLink.trim().length > 0
+              ? googleMapsLink.trim()
+              : null
+          );
+        } else {
+          // Get region and city names
+          const regionResult = await pool.query(
+            "SELECT name FROM ghana_regions WHERE id = $1",
+            [finalRegionId]
+          );
+          const cityResult = await pool.query(
+            "SELECT name FROM ghana_cities WHERE id = $1",
+            [finalCityId]
+          );
 
-        if (regionResult.rows.length === 0 || cityResult.rows.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid region or city ID",
+          if (regionResult.rows.length === 0 || cityResult.rows.length === 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid region or city ID",
+            });
+          }
+
+          const regenerated = generatePickupMapsLink({
+            regionName: regionResult.rows[0].name,
+            cityName: cityResult.rows[0].name,
+            areaName: finalAreaName,
+            landmark: finalLandmark,
+            additionalInstructions: finalAdditionalInstructions,
           });
+          updateFields.push(`google_maps_link = $${paramCount++}`);
+          updateValues.push(regenerated);
         }
-
-        // Generate new Google Maps link
-        const mapsLink = generatePickupMapsLink({
-          regionName: regionResult.rows[0].name,
-          cityName: cityResult.rows[0].name,
-          areaName: finalAreaName,
-          landmark: finalLandmark,
-          additionalInstructions: finalAdditionalInstructions,
-        });
-
-        updateFields.push(`google_maps_link = $${paramCount++}`);
-        updateValues.push(mapsLink);
       }
 
       updateFields.push("updated_at = CURRENT_TIMESTAMP");

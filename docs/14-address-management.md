@@ -171,7 +171,8 @@ Authorization: Bearer <customer_token>
   "landmark": "Near Top Oil Kpone",
   "additionalInstructions": "Call when you arrive",
   "contactPhone": "+233123456789",
-  "isDefault": true
+  "isDefault": true,
+  "googleMapsLink": "https://maps.google.com/?q=5.6037,-0.1870" // optional override
 }
 ```
 
@@ -181,6 +182,8 @@ Authorization: Bearer <customer_token>
 PUT /api/customer-addresses/:id
 Authorization: Bearer <customer_token>
 ```
+
+**Optional fields (any subset):** regionId, cityId, areaName, landmark, additionalInstructions, contactPhone, isDefault, googleMapsLink
 
 #### Delete Address
 
@@ -212,7 +215,7 @@ Authorization: Bearer <customer_token>
 
 ### Google Maps Integration
 
-Both pickup locations and customer addresses automatically generate Google Maps links using the format:
+Both pickup locations and customer addresses can accept explicit Google Maps links, or the server will auto-generate one using the format below when a link is not provided:
 
 ```
 https://www.google.com/maps/search/?api=1&query={landmark}, {areaName}, {cityName}, {regionName}, Ghana
