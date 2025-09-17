@@ -173,6 +173,8 @@ Frontend (Inline): open Paystack modal with public key, pass `reference`, `amoun
   }
   ```
 
+````
+
 ### Order Retrieval
 
 #### Get User's Orders
@@ -215,7 +217,7 @@ Frontend (Inline): open Paystack modal with public key, pass `reference`, `amoun
       }
     ]
   }
-  ```
+````
 
 #### Get Single Order
 
@@ -1033,6 +1035,49 @@ Database changes (migration required)
 - Added `orders.amount_paid` column to track partial payments.
 - Updated `orders.payment_status` constraint to include `'partial'` status.
 - Run migrations: `node src/database/migrate.js` after pulling latest changes.
+
+## Orders List Responses – itemsCount
+
+Both orders list endpoints now include an `itemsCount` field per order (number of distinct line items in the order):
+
+- GET `/api/orders` (customer)
+- GET `/api/orders/admin` (admin)
+
+Example shape (admin list item):
+
+```json
+{
+  "id": "6",
+  "orderNumber": "ORD-167038-117",
+  "status": "pending",
+  "paymentMethod": "online",
+  "paymentStatus": "pending",
+  "deliveryMethod": "delivery",
+  "itemsCount": 3,
+  "totals": {
+    "subtotal": 79.99,
+    "taxAmount": 1.5,
+    "shippingFee": 20.0,
+    "totalAmount": 101.49
+  },
+  "customerEmail": "customer@example.com",
+  "deliveryZoneName": "tm zone",
+  "pickupLocationName": null,
+  "createdAt": "2025-09-16T22:46:38.000Z",
+  "updatedAt": "2025-09-16T22:46:38.000Z"
+}
+```
+
+Frontend display guidance (list views):
+
+- **Items column**: show `{order.itemsCount} items`.
+- **Total column**: format `{order.totals.totalAmount}` to two decimals (e.g., `₵{order.totals.totalAmount.toFixed(2)}`).
+- **Payment column**: show `{order.paymentStatus}` (`pending`, `partial`, `paid`).
+- **Delivery column**: show `{order.deliveryMethod}` and either `{order.deliveryZoneName}` (delivery) or `{order.pickupLocationName}` (pickup).
+
+Notes:
+
+- Single order endpoint `GET /api/orders/:id` returns full `items` array; you can compute different items as `items.length` and units as `sum(item.quantity)`.
 
 Order response fields
 

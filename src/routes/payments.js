@@ -569,6 +569,7 @@ router.post("/paystack/verify", async (req, res) => {
         .status(400)
         .json({ success: false, message: "reference is required" });
     }
+    console.log("[VERIFY] Start", { reference });
 
     const secret = process.env.PAYSTACK_SECRET_KEY;
     if (!secret) {
@@ -590,6 +591,14 @@ router.post("/paystack/verify", async (req, res) => {
       }
     );
     const verifyJson = await verifyRes.json();
+    console.log("[VERIFY] Paystack response", {
+      httpOk: verifyRes.ok,
+      paystackStatus: verifyJson?.status,
+      dataStatus: verifyJson?.data?.status,
+      amount: verifyJson?.data?.amount,
+      currency: verifyJson?.data?.currency,
+      customer: verifyJson?.data?.customer?.email,
+    });
     if (!verifyRes.ok || !verifyJson.status) {
       return res.status(502).json({
         success: false,
@@ -600,6 +609,13 @@ router.post("/paystack/verify", async (req, res) => {
 
     // Mirror callback logic to create/link order from session if needed
     const data = verifyJson.data;
+    // Extract paid details for payment upsert in dev verify flow
+    const paidAmount = Number(verifyJson.data.amount || 0) / 100;
+    const paidCurrency = verifyJson.data.currency || "GHS";
+    const paidTransactionId = verifyJson.data.id?.toString() || null;
+    const paidAuthorizationCode =
+      verifyJson.data.authorization?.authorization_code || null;
+    let paidCustomerEmail = verifyJson.data.customer?.email || null;
 
     // Try resolve order by reference
     let orderId = null;
@@ -609,6 +625,7 @@ router.post("/paystack/verify", async (req, res) => {
     );
     if (orderRes.rows.length > 0) {
       orderId = orderRes.rows[0].id;
+      console.log("[VERIFY] Found existing order", { orderId, reference });
     }
 
     if (orderId) {
@@ -616,6 +633,33 @@ router.post("/paystack/verify", async (req, res) => {
         `UPDATE orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
         [orderId]
       );
+      // Ensure a completed payment row exists (dev verify path)
+      await pool.query(
+        `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, payment_history)
+         VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8,$9)
+         ON CONFLICT DO NOTHING`,
+        [
+          orderId,
+          paidAmount,
+          paidCurrency,
+          reference,
+          reference,
+          paidTransactionId,
+          paidAuthorizationCode,
+          paidCustomerEmail,
+          JSON.stringify({
+            transactions: [
+              {
+                amount: paidAmount,
+                method: "paystack",
+                timestamp: new Date().toISOString(),
+                notes: "Online payment",
+              },
+            ],
+          }),
+        ]
+      );
+      console.log("[VERIFY] Marked order paid", { orderId });
     } else {
       // No order yet: try session by reference
       let sessionRes = await pool.query(
@@ -630,6 +674,10 @@ router.post("/paystack/verify", async (req, res) => {
       }
       if (sessionRes.rows.length > 0 && data.status === "success") {
         const s = sessionRes.rows[0];
+        console.log("[VERIFY] Found session", {
+          sessionId: s.id,
+          userId: s.user_id,
+        });
         const orderNum = `ORD-${Date.now().toString().slice(-6)}-${Math.floor(
           Math.random() * 1000
         )
@@ -662,24 +710,106 @@ router.post("/paystack/verify", async (req, res) => {
           ]
         );
         orderId = orderInsert.rows[0].id;
+        console.log("[VERIFY] Created order", { orderId, userId: s.user_id });
+        // Insert order items from user's cart (mirror webhook behavior for dev)
+        const cartItemsRes = await pool.query(
+          `SELECT ci.*, p.name as product_name, p.description as product_description,
+                  p.image_url as product_image_url, p.price as unit_price,
+                  p.requires_special_delivery
+           FROM cart_items ci
+           JOIN carts c ON ci.cart_id = c.id
+           JOIN products p ON ci.product_id = p.id
+           WHERE c.user_id = $1`,
+          [s.user_id]
+        );
+        for (const item of cartItemsRes.rows) {
+          await pool.query(
+            `INSERT INTO order_items (
+               order_id, product_id, product_name, product_description,
+               product_image_url, size, color, quantity, unit_price,
+               subtotal, requires_special_delivery
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [
+              orderId,
+              item.product_id,
+              item.product_name,
+              item.product_description,
+              item.product_image_url,
+              item.size,
+              item.color,
+              item.quantity,
+              item.unit_price,
+              Number(item.unit_price) * item.quantity,
+              item.requires_special_delivery,
+            ]
+          );
+          await pool.query(
+            `UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2`,
+            [item.quantity, item.product_id]
+          );
+        }
+        // Upsert completed payment row for the order
+        if (!paidCustomerEmail) {
+          const u = await pool.query(`SELECT email FROM users WHERE id = $1`, [
+            s.user_id,
+          ]);
+          if (u.rows.length > 0) paidCustomerEmail = u.rows[0].email;
+        }
+        await pool.query(
+          `INSERT INTO payments (order_id, amount, currency, method, status, provider, provider_reference, paystack_reference, transaction_id, authorization_code, customer_email, payment_history)
+           VALUES ($1,$2,$3,'paystack','completed','paystack',$4,$5,$6,$7,$8,$9)
+           ON CONFLICT DO NOTHING`,
+          [
+            orderId,
+            paidAmount,
+            paidCurrency,
+            reference,
+            reference,
+            paidTransactionId,
+            paidAuthorizationCode,
+            paidCustomerEmail,
+            JSON.stringify({
+              transactions: [
+                {
+                  amount: paidAmount,
+                  method: "paystack",
+                  timestamp: new Date().toISOString(),
+                  notes: "Online payment",
+                },
+              ],
+            }),
+          ]
+        );
+        // Clear cart
+        await pool.query(
+          `DELETE FROM cart_items USING carts WHERE cart_items.cart_id = carts.id AND carts.user_id = $1`,
+          [s.user_id]
+        );
+        await pool.query(`DELETE FROM carts WHERE user_id = $1`, [s.user_id]);
         await pool.query(
           `UPDATE payments SET order_id = $1 WHERE provider_reference = $2 AND order_id IS NULL`,
           [orderId, reference]
         );
+        console.log("[VERIFY] Linked any existing payment to order", {
+          orderId,
+          reference,
+        });
         await pool.query(
           `UPDATE checkout_sessions SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
           [s.id]
         );
+        console.log("[VERIFY] Marked session paid", { sessionId: s.id });
       }
     }
 
+    console.log("[VERIFY] Done", { reference, orderId });
     return res.json({
       success: true,
       message: "Verification processed",
       orderId: orderId ? orderId.toString() : null,
     });
   } catch (e) {
-    console.error("Error verifying Paystack transaction:", e);
+    console.error("[VERIFY] Error", e);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });

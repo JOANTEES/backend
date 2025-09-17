@@ -512,6 +512,7 @@ router.get("/", authenticateUser, async (req, res) => {
         o.delivery_method, o.delivery_address, o.subtotal, o.tax_amount,
         o.shipping_fee, o.large_order_fee, o.special_delivery_fee,
         o.total_amount, o.customer_notes, o.created_at, o.updated_at,
+        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS items_count,
         o.confirmed_at, o.shipped_at, o.delivered_at,
         pl.name as pickup_location_name,
         dz.name as delivery_zone_name
@@ -535,6 +536,7 @@ router.get("/", authenticateUser, async (req, res) => {
       deliveryAddress: row.delivery_address,
       pickupLocationName: row.pickup_location_name,
       deliveryZoneName: row.delivery_zone_name,
+      itemsCount: Number(row.items_count || 0),
       totals: {
         subtotal: parseFloat(row.subtotal),
         taxAmount: parseFloat(row.tax_amount),
@@ -568,7 +570,7 @@ router.get("/", authenticateUser, async (req, res) => {
 });
 
 // GET /api/orders/:id - Get single order
-router.get("/:id", authenticateUser, async (req, res) => {
+router.get("/:id(\\d+)", authenticateUser, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
     const userId = req.user.id;
@@ -753,6 +755,7 @@ router.get("/admin", adminAuth, async (req, res) => {
          o.id, o.order_number, o.status, o.payment_method, o.payment_status,
          o.delivery_method, o.subtotal, o.tax_amount, o.shipping_fee, o.total_amount,
          o.created_at, o.updated_at,
+         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS items_count,
          u.email as customer_email,
          pl.name as pickup_location_name,
          dz.name as delivery_zone_name
@@ -777,6 +780,7 @@ router.get("/admin", adminAuth, async (req, res) => {
         paymentMethod: row.payment_method,
         paymentStatus: row.payment_status,
         deliveryMethod: row.delivery_method,
+        itemsCount: Number(row.items_count || 0),
         totals: {
           subtotal: parseFloat(row.subtotal),
           taxAmount: parseFloat(row.tax_amount),

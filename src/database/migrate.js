@@ -133,7 +133,7 @@ async function migrate() {
       -- Order Status
       status VARCHAR(50) DEFAULT 'pending' CHECK (status IN (
         'pending', 'confirmed', 'processing', 'ready_for_pickup', 
-        'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'
+        'shipped', 'out_for_delivery', 'delivered', 'completed', 'cancelled', 'refunded'
       )),
       
       -- Payment Information
