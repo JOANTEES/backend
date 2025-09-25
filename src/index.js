@@ -24,6 +24,7 @@ const customerAddressesRoutes = require("./routes/customer-addresses");
 const ordersRoutes = require("./routes/orders");
 const brandsRoutes = require("./routes/brands");
 const categoriesRoutes = require("./routes/categories");
+const productVariantsRoutes = require("./routes/product-variants");
 
 // Database connection
 const pool = new Pool({
@@ -66,6 +67,7 @@ app.use("/api/customer-addresses", customerAddressesRoutes);
 app.use("/api/orders", ordersRoutes);
 app.use("/api/brands", brandsRoutes);
 app.use("/api/categories", categoriesRoutes);
+app.use("/api/product-variants", productVariantsRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -212,6 +214,26 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(`   POST /api/categories - Create new category (admin only)`);
     console.log(`   PUT /api/categories/:id - Update category (admin only)`);
     console.log(`   DELETE /api/categories/:id - Delete category (admin only)`);
+    console.log(`🔧 Product variants endpoints:`);
+    console.log(
+      `   GET /api/product-variants/product/:productId - Get variants for product`
+    );
+    console.log(`   GET /api/product-variants/:id - Get single variant`);
+    console.log(
+      `   POST /api/product-variants - Create new variant (admin only)`
+    );
+    console.log(
+      `   PUT /api/product-variants/:id - Update variant (admin only)`
+    );
+    console.log(
+      `   DELETE /api/product-variants/:id - Delete variant (admin only)`
+    );
+    console.log(
+      `   GET /api/product-variants/product/:productId/stock - Get stock levels (admin only)`
+    );
+    console.log(
+      `   PUT /api/product-variants/:id/stock - Update stock quantity (admin only)`
+    );
   });
 }
 
