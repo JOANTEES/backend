@@ -22,6 +22,8 @@ const ghanaLocationsRoutes = require("./routes/ghana-locations");
 const pickupLocationsRoutes = require("./routes/pickup-locations");
 const customerAddressesRoutes = require("./routes/customer-addresses");
 const ordersRoutes = require("./routes/orders");
+const brandsRoutes = require("./routes/brands");
+const categoriesRoutes = require("./routes/categories");
 
 // Database connection
 const pool = new Pool({
@@ -62,6 +64,8 @@ app.use("/api/ghana", ghanaLocationsRoutes);
 app.use("/api/pickup-locations", pickupLocationsRoutes);
 app.use("/api/customer-addresses", customerAddressesRoutes);
 app.use("/api/orders", ordersRoutes);
+app.use("/api/brands", brandsRoutes);
+app.use("/api/categories", categoriesRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -194,6 +198,20 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(`   POST /api/orders - Create order from cart`);
     console.log(`   GET /api/orders - Get user's orders`);
     console.log(`   GET /api/orders/:id - Get single order with items`);
+    console.log(`🏷️  Brand management endpoints:`);
+    console.log(`   GET /api/brands - Get all active brands`);
+    console.log(`   GET /api/brands/:id - Get single brand`);
+    console.log(`   POST /api/brands - Create new brand (admin only)`);
+    console.log(`   PUT /api/brands/:id - Update brand (admin only)`);
+    console.log(`   DELETE /api/brands/:id - Delete brand (admin only)`);
+    console.log(`📂 Category management endpoints:`);
+    console.log(`   GET /api/categories - Get hierarchical category tree`);
+    console.log(`   GET /api/categories/flat - Get flat category list`);
+    console.log(`   GET /api/categories/:id - Get single category`);
+    console.log(`   GET /api/categories/:id/children - Get subcategories`);
+    console.log(`   POST /api/categories - Create new category (admin only)`);
+    console.log(`   PUT /api/categories/:id - Update category (admin only)`);
+    console.log(`   DELETE /api/categories/:id - Delete category (admin only)`);
   });
 }
 

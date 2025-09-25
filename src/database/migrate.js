@@ -20,6 +20,43 @@ async function migrate() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_eligible BOOLEAN DEFAULT true;",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS pickup_eligible BOOLEAN DEFAULT true;",
 
+    // --- Enhanced Product Management (Brands, Categories, Pricing, Variants) ---
+
+    // Create brands table
+    "CREATE TABLE IF NOT EXISTS brands (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, description TEXT, logo_url VARCHAR(500), is_active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+
+    // Create categories table with hierarchical support
+    "CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, description TEXT, parent_id INTEGER REFERENCES categories(id) ON DELETE CASCADE, image_url VARCHAR(500), is_active BOOLEAN DEFAULT true, sort_order INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+
+    // Add new pricing and relationship fields to products
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(100) UNIQUE;",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price DECIMAL(10,2) CHECK (cost_price >= 0);",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS discount_price DECIMAL(10,2) CHECK (discount_price > 0 AND discount_price < price);",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS discount_percent DECIMAL(5,2) CHECK (discount_percent >= 0 AND discount_percent <= 100);",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id INTEGER REFERENCES brands(id) ON DELETE SET NULL;",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL;",
+
+    // Create product variants table
+    "CREATE TABLE IF NOT EXISTS product_variants (id SERIAL PRIMARY KEY, product_id INTEGER REFERENCES products(id) ON DELETE CASCADE, sku VARCHAR(100) UNIQUE, size VARCHAR(20), color VARCHAR(50), stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0), image_url VARCHAR(500), is_active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+
+    // Update cart_items to use variants
+    "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE;",
+    "ALTER TABLE cart_items DROP CONSTRAINT IF EXISTS cart_items_product_id_size_color_key;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cart_items_variant_id_unique') THEN ALTER TABLE cart_items ADD CONSTRAINT cart_items_variant_id_unique UNIQUE(cart_id, variant_id); END IF; END $$;",
+
+    // Update order_items to include variant information
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL;",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_sku VARCHAR(100);",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS original_price DECIMAL(10,2);",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0 CHECK (discount_amount >= 0);",
+
+    // Update existing order_items to set original_price = unit_price
+    "UPDATE order_items SET original_price = unit_price WHERE original_price IS NULL;",
+
+    // Now make original_price NOT NULL
+    "ALTER TABLE order_items ALTER COLUMN original_price SET NOT NULL;",
+    "ALTER TABLE order_items ADD CONSTRAINT order_items_original_price_check CHECK (original_price > 0);",
+
     // --- Refactor Cart to Order-Level Delivery (Robust Script) ---
 
     // 1. Create the new 'carts' table. 'IF NOT EXISTS' makes it safe to re-run.
@@ -448,6 +485,21 @@ async function migrate() {
     // --- Indexes for Cart and Delivery ---
     "CREATE INDEX IF NOT EXISTS idx_cart_items_cart_id ON cart_items(cart_id);",
     "CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);",
+    "CREATE INDEX IF NOT EXISTS idx_cart_items_variant_id ON cart_items(variant_id);",
+
+    // --- Indexes for Enhanced Product Management ---
+    "CREATE INDEX IF NOT EXISTS idx_brands_name ON brands(name);",
+    "CREATE INDEX IF NOT EXISTS idx_brands_active ON brands(is_active);",
+    "CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON categories(parent_id);",
+    "CREATE INDEX IF NOT EXISTS idx_categories_active ON categories(is_active);",
+    "CREATE INDEX IF NOT EXISTS idx_categories_sort_order ON categories(sort_order);",
+    "CREATE INDEX IF NOT EXISTS idx_products_brand_id ON products(brand_id);",
+    "CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);",
+    "CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);",
+    "CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id);",
+    "CREATE INDEX IF NOT EXISTS idx_product_variants_sku ON product_variants(sku);",
+    "CREATE INDEX IF NOT EXISTS idx_product_variants_size_color ON product_variants(size, color);",
+    "CREATE INDEX IF NOT EXISTS idx_product_variants_active ON product_variants(is_active);",
     "CREATE INDEX IF NOT EXISTS idx_delivery_zones_name ON delivery_zones(name);",
     "CREATE INDEX IF NOT EXISTS idx_delivery_zones_active ON delivery_zones(is_active);",
     "CREATE INDEX IF NOT EXISTS idx_ghana_regions_active ON ghana_regions(is_active);",

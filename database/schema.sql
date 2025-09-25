@@ -17,21 +17,70 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Products table for clothing items
+-- Brands table for product brands
+CREATE TABLE IF NOT EXISTS brands (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    logo_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Categories table with hierarchical support (subcategories)
+CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    parent_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+    image_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT true,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Products table for clothing items (Enhanced with pricing and brand/category links)
 CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
+    sku VARCHAR(100) UNIQUE,
+    
+    -- Pricing
+    cost_price DECIMAL(10,2) CHECK (cost_price >= 0),
     price DECIMAL(10,2) NOT NULL CHECK (price > 0),
-    category VARCHAR(100) NOT NULL,
-    size VARCHAR(20),
-    color VARCHAR(50),
-    stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0),
+    discount_price DECIMAL(10,2) CHECK (discount_price > 0 AND discount_price < price),
+    discount_percent DECIMAL(5,2) CHECK (discount_percent >= 0 AND discount_percent <= 100),
+    
+    -- Relationships
+    brand_id INTEGER REFERENCES brands(id) ON DELETE SET NULL,
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    
+    -- Legacy fields (kept for backward compatibility)
+    category VARCHAR(100),
+    
+    -- Product properties
     image_url VARCHAR(500),
     is_active BOOLEAN DEFAULT true,
     requires_special_delivery BOOLEAN DEFAULT false,
     delivery_eligible BOOLEAN DEFAULT true,
     pickup_eligible BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Product variants table for size/color combinations with individual stock
+CREATE TABLE IF NOT EXISTS product_variants (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    sku VARCHAR(100) UNIQUE,
+    size VARCHAR(20),
+    color VARCHAR(50),
+    stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0),
+    image_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -84,11 +133,12 @@ CREATE TABLE IF NOT EXISTS orders (
     delivered_at TIMESTAMP
 );
 
--- Order items table for individual items in orders (Enhanced)
+-- Order items table for individual items in orders (Enhanced with variants)
 CREATE TABLE IF NOT EXISTS order_items (
     id SERIAL PRIMARY KEY,
     order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
     
     -- Product Details (snapshot at time of order)
     product_name VARCHAR(255) NOT NULL,
@@ -96,10 +146,13 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_image_url VARCHAR(500),
     size VARCHAR(20),
     color VARCHAR(50),
+    variant_sku VARCHAR(100),
     
-    -- Pricing
+    -- Pricing (effective price at time of order)
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     unit_price DECIMAL(10,2) NOT NULL CHECK (unit_price > 0),
+    original_price DECIMAL(10,2) NOT NULL CHECK (original_price > 0),
+    discount_amount DECIMAL(10,2) DEFAULT 0 CHECK (discount_amount >= 0),
     subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal > 0),
     
     -- Special flags
@@ -336,17 +389,16 @@ CREATE TABLE IF NOT EXISTS carts (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Cart items table
+-- Cart items table (Updated to use product variants)
 CREATE TABLE IF NOT EXISTS cart_items (
     id SERIAL PRIMARY KEY,
     cart_id INTEGER REFERENCES carts(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL CHECK (quantity > 0),
-    size VARCHAR(20),
-    color VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(cart_id, product_id, size, color)
+    UNIQUE(cart_id, variant_id)
 );
 
 -- Ghana Regions (Fixed list of 16 regions)
@@ -409,9 +461,28 @@ CREATE INDEX IF NOT EXISTS idx_purchase_history_customer_id ON purchase_history(
 CREATE INDEX IF NOT EXISTS idx_purchase_history_order_date ON purchase_history(order_date);
 CREATE INDEX IF NOT EXISTS idx_purchase_history_items_purchase_id ON purchase_history_items(purchase_id);
 
+-- Create indexes for new tables
+CREATE INDEX IF NOT EXISTS idx_brands_name ON brands(name);
+CREATE INDEX IF NOT EXISTS idx_brands_active ON brands(is_active);
+
+CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON categories(parent_id);
+CREATE INDEX IF NOT EXISTS idx_categories_active ON categories(is_active);
+CREATE INDEX IF NOT EXISTS idx_categories_sort_order ON categories(sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_products_brand_id ON products(brand_id);
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
+
+CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_variants_sku ON product_variants(sku);
+CREATE INDEX IF NOT EXISTS idx_product_variants_size_color ON product_variants(size, color);
+CREATE INDEX IF NOT EXISTS idx_product_variants_active ON product_variants(is_active);
+
 -- Create indexes for cart tables
-CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_cart_id ON cart_items(cart_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_product_id ON cart_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_variant_id ON cart_items(variant_id);
 
 -- Create indexes for Ghana regions and cities
 CREATE INDEX IF NOT EXISTS idx_ghana_regions_active ON ghana_regions(is_active);

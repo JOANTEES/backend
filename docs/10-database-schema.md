@@ -13,24 +13,69 @@ Stores information for all users, including customers and admins.
 - `role`: VARCHAR(50) ('customer' or 'admin')
 - `created_at`: TIMESTAMP
 
+### `brands`
+
+Stores product brand information.
+
+- `id`: SERIAL PRIMARY KEY
+- `name`: VARCHAR(100) UNIQUE
+- `description`: TEXT
+- `logo_url`: VARCHAR(500)
+- `is_active`: BOOLEAN
+- `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
+
+### `categories`
+
+Stores product categories with hierarchical support (subcategories).
+
+- `id`: SERIAL PRIMARY KEY
+- `name`: VARCHAR(100)
+- `description`: TEXT
+- `parent_id`: INTEGER REFERENCES categories(id)
+- `image_url`: VARCHAR(500)
+- `is_active`: BOOLEAN
+- `sort_order`: INTEGER
+- `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
+
 ### `products`
 
-Contains all product information for the catalog.
+Contains all product information for the catalog (Enhanced with pricing and relationships).
 
 - `id`: SERIAL PRIMARY KEY
 - `name`: VARCHAR(255)
 - `description`: TEXT
+- `sku`: VARCHAR(100) UNIQUE
+- `cost_price`: DECIMAL(10, 2)
 - `price`: DECIMAL(10, 2)
-- `category`: VARCHAR(100)
-- `size`: VARCHAR(50)
-- `color`: VARCHAR(50)
-- `stock_quantity`: INTEGER
+- `discount_price`: DECIMAL(10, 2)
+- `discount_percent`: DECIMAL(5, 2)
+- `brand_id`: INTEGER REFERENCES brands(id)
+- `category_id`: INTEGER REFERENCES categories(id)
+- `category`: VARCHAR(100) (legacy field)
 - `image_url`: VARCHAR(500)
 - `is_active`: BOOLEAN
 - `requires_special_delivery`: BOOLEAN
 - `delivery_eligible`: BOOLEAN
 - `pickup_eligible`: BOOLEAN
 - `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
+
+### `product_variants`
+
+Stores product variants (size/color combinations) with individual stock.
+
+- `id`: SERIAL PRIMARY KEY
+- `product_id`: INTEGER REFERENCES products(id)
+- `sku`: VARCHAR(100) UNIQUE
+- `size`: VARCHAR(20)
+- `color`: VARCHAR(50)
+- `stock_quantity`: INTEGER
+- `image_url`: VARCHAR(500)
+- `is_active`: BOOLEAN
+- `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
 
 ### `carts`
 
@@ -45,14 +90,13 @@ Stores user cart information with order-level delivery method.
 
 ### `cart_items`
 
-Stores items currently in a user's shopping cart.
+Stores items currently in a user's shopping cart (Updated to use product variants).
 
 - `id`: SERIAL PRIMARY KEY
 - `cart_id`: INTEGER (Foreign Key to `carts.id`)
 - `product_id`: INTEGER (Foreign Key to `products.id`)
+- `variant_id`: INTEGER (Foreign Key to `product_variants.id`)
 - `quantity`: INTEGER
-- `size`: VARCHAR(20)
-- `color`: VARCHAR(50)
 - `created_at`: TIMESTAMP
 
 ### `ghana_regions`
