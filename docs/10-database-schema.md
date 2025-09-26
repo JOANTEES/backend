@@ -41,7 +41,7 @@ Stores product categories with hierarchical support (subcategories).
 
 ### `products`
 
-Contains all product information for the catalog (Enhanced with pricing and relationships).
+Contains all product information for the catalog (Enhanced with pricing, variants, and relationships).
 
 - `id`: SERIAL PRIMARY KEY
 - `name`: VARCHAR(255)
@@ -53,18 +53,19 @@ Contains all product information for the catalog (Enhanced with pricing and rela
 - `discount_percent`: DECIMAL(5, 2)
 - `brand_id`: INTEGER REFERENCES brands(id)
 - `category_id`: INTEGER REFERENCES categories(id)
-- `category`: VARCHAR(100) (legacy field)
+- `category`: VARCHAR(100) (Legacy field)
 - `image_url`: VARCHAR(500)
-- `is_active`: BOOLEAN
+- `stock_quantity`: INTEGER
 - `requires_special_delivery`: BOOLEAN
 - `delivery_eligible`: BOOLEAN
 - `pickup_eligible`: BOOLEAN
+- `is_active`: BOOLEAN
 - `created_at`: TIMESTAMP
 - `updated_at`: TIMESTAMP
 
 ### `product_variants`
 
-Stores product variants (size/color combinations) with individual stock.
+Stores product variants for size/color combinations with individual stock tracking.
 
 - `id`: SERIAL PRIMARY KEY
 - `product_id`: INTEGER REFERENCES products(id)
@@ -79,93 +80,176 @@ Stores product variants (size/color combinations) with individual stock.
 
 ### `carts`
 
-Stores user cart information with order-level delivery method.
+Stores user shopping carts with delivery method selection.
 
 - `id`: SERIAL PRIMARY KEY
-- `user_id`: INTEGER (Foreign Key to `users.id`)
-- `delivery_method`: VARCHAR(20) ('pickup' or 'delivery')
-- `delivery_zone_id`: INTEGER (Foreign Key to `delivery_zones.id`)
+- `user_id`: INTEGER REFERENCES users(id)
+- `delivery_method`: VARCHAR(20) ('delivery' or 'pickup')
+- `delivery_zone_id`: INTEGER REFERENCES delivery_zones(id)
 - `created_at`: TIMESTAMP
 - `updated_at`: TIMESTAMP
 
 ### `cart_items`
 
-Stores items currently in a user's shopping cart (Updated to use product variants).
+Stores individual items in shopping carts with variant support.
 
 - `id`: SERIAL PRIMARY KEY
-- `cart_id`: INTEGER (Foreign Key to `carts.id`)
-- `product_id`: INTEGER (Foreign Key to `products.id`)
-- `variant_id`: INTEGER (Foreign Key to `product_variants.id`)
+- `cart_id`: INTEGER REFERENCES carts(id)
+- `product_id`: INTEGER REFERENCES products(id)
+- `variant_id`: INTEGER REFERENCES product_variants(id)
 - `quantity`: INTEGER
 - `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
 
-### `ghana_regions`
+### `orders`
 
-Stores all 16 regions of Ghana for structured address selection.
+Stores order information with comprehensive tracking.
 
 - `id`: SERIAL PRIMARY KEY
-- `name`: VARCHAR(100) UNIQUE
-- `code`: VARCHAR(10) UNIQUE
-- `is_active`: BOOLEAN
+- `user_id`: INTEGER REFERENCES users(id)
+- `order_number`: VARCHAR(50) UNIQUE
+- `payment_method`: VARCHAR(20)
+- `delivery_method`: VARCHAR(20)
+- `delivery_zone_id`: INTEGER REFERENCES delivery_zones(id)
+- `pickup_location_id`: INTEGER REFERENCES pickup_locations(id)
+- `delivery_address_id`: INTEGER REFERENCES customer_addresses(id)
+- `delivery_address`: JSONB
+- `subtotal`: DECIMAL(10, 2)
+- `tax_amount`: DECIMAL(10, 2)
+- `shipping_fee`: DECIMAL(10, 2)
+- `large_order_fee`: DECIMAL(10, 2)
+- `special_delivery_fee`: DECIMAL(10, 2)
+- `total_amount`: DECIMAL(10, 2)
+- `customer_notes`: TEXT
+- `status`: VARCHAR(20)
+- `payment_status`: VARCHAR(20)
+- `amount_paid`: DECIMAL(10, 2)
+- `payment_reference`: VARCHAR(100)
+- `notes`: TEXT
+- `estimated_delivery_date`: DATE
+- `actual_delivery_date`: DATE
 - `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
+- `confirmed_at`: TIMESTAMP
+- `shipped_at`: TIMESTAMP
+- `delivered_at`: TIMESTAMP
 
-### `ghana_cities`
+### `order_items`
 
-Stores major cities for each region.
+Stores individual items in orders with variant snapshots.
 
 - `id`: SERIAL PRIMARY KEY
-- `region_id`: INTEGER (Foreign Key to `ghana_regions.id`)
-- `name`: VARCHAR(100)
-- `is_active`: BOOLEAN
+- `order_id`: INTEGER REFERENCES orders(id)
+- `product_id`: INTEGER REFERENCES products(id)
+- `variant_id`: INTEGER REFERENCES product_variants(id)
+- `product_name`: VARCHAR(255)
+- `product_description`: TEXT
+- `product_image_url`: VARCHAR(500)
+- `variant_sku`: VARCHAR(100)
+- `size`: VARCHAR(20)
+- `color`: VARCHAR(50)
+- `quantity`: INTEGER
+- `unit_price`: DECIMAL(10, 2)
+- `subtotal`: DECIMAL(10, 2)
+- `requires_special_delivery`: BOOLEAN
 - `created_at`: TIMESTAMP
 
 ### `delivery_zones`
 
-Stores delivery zone information and fees.
+Stores delivery zones with associated fees and coverage areas.
 
 - `id`: SERIAL PRIMARY KEY
-- `name`: VARCHAR(255)
-- `description`: TEXT
+- `name`: VARCHAR(100)
 - `delivery_fee`: DECIMAL(10, 2)
-- `estimated_days`: VARCHAR(50)
-- `coverage_areas`: TEXT[] (Array of strings)
+- `estimated_days`: INTEGER
 - `is_active`: BOOLEAN
 - `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
 
-### `delivery_zone_areas`
+### `pickup_locations`
 
-Stores structured area coverage for each delivery zone.
+Stores admin-managed pickup locations with Ghana address structure.
 
 - `id`: SERIAL PRIMARY KEY
-- `delivery_zone_id`: INTEGER (Foreign Key to `delivery_zones.id`)
-- `region_id`: INTEGER (Foreign Key to `ghana_regions.id`)
-- `city_id`: INTEGER (Foreign Key to `ghana_cities.id`)
+- `name`: VARCHAR(100)
+- `region_id`: INTEGER REFERENCES ghana_regions(id)
+- `city_id`: INTEGER REFERENCES ghana_cities(id)
 - `area_name`: VARCHAR(100)
+- `landmark`: VARCHAR(200)
+- `contact_phone`: VARCHAR(20)
+- `google_maps_link`: VARCHAR(500)
+- `is_active`: BOOLEAN
 - `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
+
+### `customer_addresses`
+
+Stores customer delivery addresses with Ghana address structure.
+
+- `id`: SERIAL PRIMARY KEY
+- `customer_id`: INTEGER REFERENCES users(id)
+- `region_id`: INTEGER REFERENCES ghana_regions(id)
+- `city_id`: INTEGER REFERENCES ghana_cities(id)
+- `area_name`: VARCHAR(100)
+- `landmark`: VARCHAR(200)
+- `additional_instructions`: TEXT
+- `contact_phone`: VARCHAR(20)
+- `google_maps_link`: VARCHAR(500)
+- `is_default`: BOOLEAN
+- `created_at`: TIMESTAMP
+- `updated_at`: TIMESTAMP
+
+### `ghana_regions`
+
+Pre-populated table with Ghana's 16 regions.
+
+- `id`: SERIAL PRIMARY KEY
+- `name`: VARCHAR(100)
+- `code`: VARCHAR(10)
+- `is_active`: BOOLEAN
+
+### `ghana_cities`
+
+Pre-populated table with major cities in each region.
+
+- `id`: SERIAL PRIMARY KEY
+- `region_id`: INTEGER REFERENCES ghana_regions(id)
+- `name`: VARCHAR(100)
+- `is_active`: BOOLEAN
 
 ### `app_settings`
 
-Stores application-wide business settings (singleton table).
+Singleton table for application-wide configuration.
 
 - `id`: INTEGER PRIMARY KEY (always 1)
-- `tax_rate`: DECIMAL(5, 2) (percentage)
+- `tax_rate`: DECIMAL(5, 2)
 - `free_shipping_threshold`: DECIMAL(10, 2)
 - `large_order_quantity_threshold`: INTEGER
 - `large_order_delivery_fee`: DECIMAL(10, 2)
-- `pickup_address`: TEXT
-- `currency_symbol`: VARCHAR(5)
+- `currency_symbol`: VARCHAR(10)
 - `currency_code`: VARCHAR(3)
+- `created_at`: TIMESTAMP
 - `updated_at`: TIMESTAMP
 
-### Customer Management Tables
+## Additional Tables
 
-The CRM system uses a set of related tables to store customer data, including:
+The system also includes several other tables for comprehensive e-commerce functionality:
 
-- `customer_segments`
-- `loyalty_programs`
-- `customer_preferences`
-- `customer_addresses`
-- `purchase_history`
-- `customer_activity`
+### Customer Management
 
-Refer to `database/schema.sql` for detailed column definitions of these tables.
+- `customer_segments` - Customer segmentation for marketing
+- `loyalty_programs` - Loyalty program definitions
+- `customer_preferences` - Customer preference settings
+- `customer_activity` - Customer activity tracking
+- `purchase_history` - Historical purchase data
+
+### Payment & Checkout
+
+- `payments` - Payment transaction records
+- `checkout_sessions` - Online payment sessions
+
+### Address & Location
+
+- `delivery_zone_areas` - Structured area coverage for delivery zones
+
+For complete table definitions and relationships, refer to the `database/schema.sql` file.

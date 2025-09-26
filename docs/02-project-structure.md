@@ -17,12 +17,18 @@ The project follows a standard Node.js application structure, separating concern
 │   ├── routes/
 │   │   ├── auth.js       # Authentication routes (register, login)
 │   │   ├── bookings.js   # Routes for handling bookings
-│   │   ├── cart.js       # Shopping cart routes
+│   │   ├── brands.js     # Brand management routes (admin CRUD)
+│   │   ├── cart.js       # Shopping cart routes with variant support
+│   │   ├── categories.js # Category management routes (hierarchical)
+│   │   ├── customer-addresses.js # Customer address management
 │   │   ├── customers.js  # Customer management routes
 │   │   ├── dashboard.js  # Routes for admin dashboard data
 │   │   ├── delivery-zones.js # Delivery zone management routes
+│   │   ├── orders.js     # Order management routes (creation, tracking)
 │   │   ├── payments.js   # Payment processing routes
-│   │   ├── products.js   # Product and category routes
+│   │   ├── pickup-locations.js # Pickup location management
+│   │   ├── products.js   # Product management routes with pricing
+│   │   ├── product-variants.js # Product variant management (size/color)
 │   │   └── users.js      # Admin routes for user management
 │   └── index.js          # Main application entry point
 ├── .env                  # Environment variables (DATABASE_URL, JWT_SECRET)
