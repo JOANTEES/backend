@@ -216,11 +216,13 @@ async function migrate() {
       id SERIAL PRIMARY KEY,
       order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
       product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+      variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
       
       -- Product Details (snapshot at time of order)
       product_name VARCHAR(255) NOT NULL,
       product_description TEXT,
       product_image_url VARCHAR(500),
+      variant_sku VARCHAR(100),
       size VARCHAR(20),
       color VARCHAR(50),
       

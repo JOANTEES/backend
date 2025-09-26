@@ -159,7 +159,7 @@ router.post(
 
       const cart = cartResult.rows[0];
 
-      // Get cart items with product details
+      // Get cart items with product and variant details
       const cartItemsResult = await pool.query(
         `
         SELECT 
@@ -170,9 +170,16 @@ router.post(
           p.price as unit_price,
           p.requires_special_delivery,
           p.delivery_eligible,
-          p.pickup_eligible
+          p.pickup_eligible,
+          pv.id as variant_id,
+          pv.sku as variant_sku,
+          pv.size as variant_size,
+          pv.color as variant_color,
+          pv.image_url as variant_image_url,
+          pv.stock_quantity as variant_stock
         FROM cart_items ci
         JOIN products p ON ci.product_id = p.id
+        JOIN product_variants pv ON ci.variant_id = pv.id
         WHERE ci.cart_id = $1
       `,
         [cart.id]
@@ -406,24 +413,26 @@ router.post(
           ]
         );
 
-        // Create order items
+        // Create order items with variant information
         for (const item of cartItems) {
           await pool.query(
             `
             INSERT INTO order_items (
-              order_id, product_id, product_name, product_description,
-              product_image_url, size, color, quantity, unit_price,
+              order_id, product_id, variant_id, product_name, product_description,
+              product_image_url, variant_sku, size, color, quantity, unit_price,
               subtotal, requires_special_delivery
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
           `,
             [
               order.id,
               item.product_id,
+              item.variant_id,
               item.product_name,
               item.product_description,
-              item.product_image_url,
-              item.size,
-              item.color,
+              item.variant_image_url || item.product_image_url,
+              item.variant_sku,
+              item.variant_size,
+              item.variant_color,
               item.quantity,
               item.unit_price,
               item.unit_price * item.quantity,
@@ -431,14 +440,28 @@ router.post(
             ]
           );
 
-          // Update product stock
+          // Update variant stock
           await pool.query(
             `
-            UPDATE products 
+            UPDATE product_variants 
             SET stock_quantity = stock_quantity - $1 
             WHERE id = $2
           `,
-            [item.quantity, item.product_id]
+            [item.quantity, item.variant_id]
+          );
+
+          // Update product total stock (sum of all variants)
+          await pool.query(
+            `
+            UPDATE products 
+            SET stock_quantity = (
+              SELECT COALESCE(SUM(stock_quantity), 0) 
+              FROM product_variants 
+              WHERE product_id = $1
+            )
+            WHERE id = $1
+          `,
+            [item.product_id]
           );
         }
 
@@ -613,13 +636,16 @@ router.get("/:id(\\d+)", authenticateUser, async (req, res) => {
 
     const order = orderResult.rows[0];
 
-    // Get order items
+    // Get order items with variant information
     const itemsResult = await pool.query(
       `
       SELECT 
-        oi.*, p.name as current_product_name, p.image_url as current_image_url
+        oi.*, p.name as current_product_name, p.image_url as current_image_url,
+        pv.id as current_variant_id, pv.sku as current_variant_sku,
+        pv.size as current_variant_size, pv.color as current_variant_color
       FROM order_items oi
       LEFT JOIN products p ON oi.product_id = p.id
+      LEFT JOIN product_variants pv ON oi.variant_id = pv.id
       WHERE oi.order_id = $1
       ORDER BY oi.created_at
     `,
@@ -629,9 +655,11 @@ router.get("/:id(\\d+)", authenticateUser, async (req, res) => {
     const orderItems = itemsResult.rows.map((item) => ({
       id: item.id.toString(),
       productId: item.product_id ? item.product_id.toString() : null,
+      variantId: item.variant_id ? item.variant_id.toString() : null,
       productName: item.product_name,
       productDescription: item.product_description,
       productImageUrl: item.product_image_url,
+      variantSku: item.variant_sku,
       size: item.size,
       color: item.color,
       quantity: item.quantity,
@@ -640,6 +668,12 @@ router.get("/:id(\\d+)", authenticateUser, async (req, res) => {
       requiresSpecialDelivery: item.requires_special_delivery,
       currentProductName: item.current_product_name,
       currentImageUrl: item.current_image_url,
+      currentVariantId: item.current_variant_id
+        ? item.current_variant_id.toString()
+        : null,
+      currentVariantSku: item.current_variant_sku,
+      currentVariantSize: item.current_variant_size,
+      currentVariantColor: item.current_variant_color,
     }));
 
     const orderData = {
@@ -848,13 +882,16 @@ router.get("/admin/:id(\\d+)", adminAuth, async (req, res) => {
 
     const order = orderResult.rows[0];
 
-    // Fetch order items
+    // Fetch order items with variant information
     const itemsResult = await pool.query(
       `
       SELECT 
-        oi.*, p.name as current_product_name, p.image_url as current_image_url
+        oi.*, p.name as current_product_name, p.image_url as current_image_url,
+        pv.id as current_variant_id, pv.sku as current_variant_sku,
+        pv.size as current_variant_size, pv.color as current_variant_color
       FROM order_items oi
       LEFT JOIN products p ON oi.product_id = p.id
+      LEFT JOIN product_variants pv ON oi.variant_id = pv.id
       WHERE oi.order_id = $1
       ORDER BY oi.created_at
     `,
@@ -864,9 +901,11 @@ router.get("/admin/:id(\\d+)", adminAuth, async (req, res) => {
     const orderItems = itemsResult.rows.map((item) => ({
       id: item.id.toString(),
       productId: item.product_id ? item.product_id.toString() : null,
+      variantId: item.variant_id ? item.variant_id.toString() : null,
       productName: item.product_name,
       productDescription: item.product_description,
       productImageUrl: item.product_image_url,
+      variantSku: item.variant_sku,
       size: item.size,
       color: item.color,
       quantity: item.quantity,
@@ -875,6 +914,12 @@ router.get("/admin/:id(\\d+)", adminAuth, async (req, res) => {
       requiresSpecialDelivery: item.requires_special_delivery,
       currentProductName: item.current_product_name,
       currentImageUrl: item.current_image_url,
+      currentVariantId: item.current_variant_id
+        ? item.current_variant_id.toString()
+        : null,
+      currentVariantSku: item.current_variant_sku,
+      currentVariantSize: item.current_variant_size,
+      currentVariantColor: item.current_variant_color,
     }));
 
     const orderData = {

@@ -1,10 +1,23 @@
 # Order & Delivery System
 
-This section covers endpoints related to order processing and delivery management.
+This section covers endpoints related to order processing and delivery management with support for product variants.
 
 ## Order Management System
 
-The order management system supports 4 payment/delivery combinations with comprehensive order tracking and management.
+The order management system supports 4 payment/delivery combinations with comprehensive order tracking and management. The system now works with product variants for precise inventory management.
+
+### Key Features
+
+- **Product Variants:** Orders work with specific size/color combinations with individual stock tracking
+- **Variant Stock Management:** Automatic variant stock reduction and product total stock updates
+- **Variant Snapshots:** Complete variant information preserved in order items
+- **Multiple Payment Methods:** Online payment (Paystack), pay on delivery, pay on pickup
+- **Delivery Options:** Home delivery with delivery zones or pickup from designated locations
+- **Order Status Tracking:** Complete order lifecycle management
+- **Address Management:** Integration with customer addresses and pickup locations
+- **Transaction Safety:** Database transactions ensure data consistency
+- **Activity Logging:** All order actions are logged
+- **Admin Controls:** Comprehensive admin management and status updates
 
 ### Order Creation
 
