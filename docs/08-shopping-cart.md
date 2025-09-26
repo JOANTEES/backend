@@ -39,6 +39,11 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
           "productName": "Nike Air Max",
           "description": "Comfortable running shoes",
           "price": 120,
+          "discountPrice": 100,
+          "discountPercent": 15,
+          "effectivePrice": 100,
+          "discountAmount": 20,
+          "hasDiscount": true,
           "quantity": 3,
           "variantId": "1",
           "sku": "NIKE-AM-001-RED-M",
@@ -49,7 +54,7 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
           "requiresSpecialDelivery": false,
           "deliveryEligible": true,
           "pickupEligible": true,
-          "subtotal": 360,
+          "subtotal": 300,
           "createdAt": "2025-09-25T21:45:19.850Z"
         },
         {
@@ -73,10 +78,10 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
         }
       ],
       "totals": {
-        "subtotal": 480,
-        "tax": 24,
+        "subtotal": 400,
+        "tax": 20,
         "shipping": 0,
-        "total": 504,
+        "total": 420,
         "deliveryEligibilityIssues": null
       },
       "itemCount": 2
@@ -423,7 +428,12 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
 | `productId`               | string  | Parent product ID                           |
 | `productName`             | string  | Name of the parent product                  |
 | `description`             | string  | Product description                         |
-| `price`                   | number  | Product price                               |
+| `price`                   | number  | Original product price                      |
+| `discountPrice`           | number  | Discount price (if set)                     |
+| `discountPercent`         | number  | Discount percentage (if set)                |
+| `effectivePrice`          | number  | Final price after discount applied          |
+| `discountAmount`          | number  | Amount saved from discount                  |
+| `hasDiscount`             | boolean | Whether product has an active discount      |
 | `quantity`                | number  | Quantity in cart                            |
 | `variantId`               | string  | Product variant ID (size/color combination) |
 | `sku`                     | string  | Variant SKU                                 |
@@ -495,6 +505,19 @@ For inventory management:
 2. Stock is only reduced during order creation
 3. This allows for cart abandonment without affecting inventory
 4. Real-time stock validation prevents overselling
+
+### Effective Pricing
+
+For discount management:
+
+1. **Original Price**: The base product price
+2. **Discount Price**: Fixed discount price (takes precedence over percentage)
+3. **Discount Percent**: Percentage discount (used if no discount price)
+4. **Effective Price**: Final price after discount applied
+5. **Discount Amount**: Amount saved from the discount
+6. **Has Discount**: Boolean flag indicating if discount is active
+7. **Subtotal Calculation**: Uses effective price × quantity
+8. **Order Creation**: Orders use effective pricing for accurate totals
 
 ### Error Handling
 

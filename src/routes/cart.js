@@ -60,6 +60,7 @@ async function getCartData(userId) {
     `SELECT
       ci.id, ci.quantity, ci.created_at,
       p.id AS product_id, p.name AS product_name, p.description, p.price,
+      p.discount_price, p.discount_percent, p.cost_price,
       p.category, p.requires_special_delivery, p.delivery_eligible, p.pickup_eligible,
       pv.id AS variant_id, pv.sku, pv.size, pv.color, pv.stock_quantity, pv.image_url
     FROM cart_items ci
@@ -93,25 +94,55 @@ async function getCartData(userId) {
         ? parseFloat(deliveryZone.delivery_fee)
         : null,
     },
-    items: itemsResult.rows.map((item) => ({
-      id: item.id.toString(),
-      productId: item.product_id.toString(),
-      productName: item.product_name,
-      description: item.description,
-      price: parseFloat(item.price),
-      quantity: item.quantity,
-      variantId: item.variant_id ? item.variant_id.toString() : null,
-      sku: item.sku,
-      size: item.size,
-      color: item.color,
-      imageUrl: item.image_url || item.product_image_url,
-      stockQuantity: item.stock_quantity,
-      requiresSpecialDelivery: item.requires_special_delivery,
-      deliveryEligible: item.delivery_eligible,
-      pickupEligible: item.pickup_eligible,
-      subtotal: parseFloat(item.price) * item.quantity,
-      createdAt: item.created_at,
-    })),
+    items: itemsResult.rows.map((item) => {
+      // Calculate effective pricing
+      const originalPrice = parseFloat(item.price);
+      const discountPrice = item.discount_price
+        ? parseFloat(item.discount_price)
+        : null;
+      const discountPercent = item.discount_percent
+        ? parseFloat(item.discount_percent)
+        : null;
+
+      let effectivePrice = originalPrice;
+      let discountAmount = 0;
+      let hasDiscount = false;
+
+      if (discountPrice && discountPrice < originalPrice) {
+        effectivePrice = discountPrice;
+        discountAmount = originalPrice - discountPrice;
+        hasDiscount = true;
+      } else if (discountPercent && discountPercent > 0) {
+        discountAmount = originalPrice * (discountPercent / 100);
+        effectivePrice = originalPrice - discountAmount;
+        hasDiscount = true;
+      }
+
+      return {
+        id: item.id.toString(),
+        productId: item.product_id.toString(),
+        productName: item.product_name,
+        description: item.description,
+        price: originalPrice,
+        discountPrice: discountPrice,
+        discountPercent: discountPercent,
+        effectivePrice: parseFloat(effectivePrice.toFixed(2)),
+        discountAmount: parseFloat(discountAmount.toFixed(2)),
+        hasDiscount: hasDiscount,
+        quantity: item.quantity,
+        variantId: item.variant_id ? item.variant_id.toString() : null,
+        sku: item.sku,
+        size: item.size,
+        color: item.color,
+        imageUrl: item.image_url || item.product_image_url,
+        stockQuantity: item.stock_quantity,
+        requiresSpecialDelivery: item.requires_special_delivery,
+        deliveryEligible: item.delivery_eligible,
+        pickupEligible: item.pickup_eligible,
+        subtotal: parseFloat((effectivePrice * item.quantity).toFixed(2)),
+        createdAt: item.created_at,
+      };
+    }),
   };
 }
 
@@ -295,8 +326,8 @@ router.post(
       const variantResult = await client.query(
         `SELECT 
           pv.id, pv.product_id, pv.sku, pv.size, pv.color, pv.stock_quantity, pv.image_url,
-          p.name as product_name, p.price, p.requires_special_delivery, 
-          p.delivery_eligible, p.pickup_eligible, p.is_active as product_active
+          p.name as product_name, p.price, p.discount_price, p.discount_percent, p.cost_price,
+          p.requires_special_delivery, p.delivery_eligible, p.pickup_eligible, p.is_active as product_active
         FROM product_variants pv
         JOIN products p ON pv.product_id = p.id
         WHERE pv.id = $1 FOR UPDATE`,

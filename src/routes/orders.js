@@ -40,7 +40,9 @@ async function calculateOrderTotals(
 
   // Calculate subtotal and check for special delivery
   for (const item of cartItems) {
-    subtotal += item.unit_price * item.quantity;
+    // Use effective price if available, otherwise fall back to unit_price
+    const itemPrice = item.effectivePrice || item.unit_price;
+    subtotal += itemPrice * item.quantity;
     totalQuantity += item.quantity;
 
     if (item.requires_special_delivery) {
@@ -168,6 +170,7 @@ router.post(
           p.description as product_description,
           p.image_url as product_image_url,
           p.price as unit_price,
+          p.discount_price, p.discount_percent, p.cost_price,
           p.requires_special_delivery,
           p.delivery_eligible,
           p.pickup_eligible,
@@ -192,7 +195,37 @@ router.post(
         });
       }
 
-      const cartItems = cartItemsResult.rows;
+      // Calculate effective pricing for cart items
+      const cartItems = cartItemsResult.rows.map((item) => {
+        const originalPrice = parseFloat(item.unit_price);
+        const discountPrice = item.discount_price
+          ? parseFloat(item.discount_price)
+          : null;
+        const discountPercent = item.discount_percent
+          ? parseFloat(item.discount_percent)
+          : null;
+
+        let effectivePrice = originalPrice;
+        let discountAmount = 0;
+        let hasDiscount = false;
+
+        if (discountPrice && discountPrice < originalPrice) {
+          effectivePrice = discountPrice;
+          discountAmount = originalPrice - discountPrice;
+          hasDiscount = true;
+        } else if (discountPercent && discountPercent > 0) {
+          discountAmount = originalPrice * (discountPercent / 100);
+          effectivePrice = originalPrice - discountAmount;
+          hasDiscount = true;
+        }
+
+        return {
+          ...item,
+          effectivePrice: parseFloat(effectivePrice.toFixed(2)),
+          discountAmount: parseFloat(discountAmount.toFixed(2)),
+          hasDiscount: hasDiscount,
+        };
+      });
 
       // Validate delivery eligibility
       const deliveryEligibilityIssues = [];
@@ -415,6 +448,9 @@ router.post(
 
         // Create order items with variant information
         for (const item of cartItems) {
+          // Use effective price if available, otherwise fall back to unit_price
+          const itemPrice = item.effectivePrice || item.unit_price;
+
           await pool.query(
             `
             INSERT INTO order_items (
@@ -434,8 +470,8 @@ router.post(
               item.variant_size,
               item.variant_color,
               item.quantity,
-              item.unit_price,
-              item.unit_price * item.quantity,
+              itemPrice,
+              itemPrice * item.quantity,
               item.requires_special_delivery,
             ]
           );
