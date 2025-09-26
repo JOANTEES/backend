@@ -29,6 +29,7 @@ The project follows a standard Node.js application structure, separating concern
 │   │   ├── pickup-locations.js # Pickup location management
 │   │   ├── products.js   # Product management routes with pricing
 │   │   ├── product-variants.js # Product variant management (size/color)
+│   │   ├── reports.js    # Reports & analytics routes (admin only)
 │   │   └── users.js      # Admin routes for user management
 │   └── index.js          # Main application entry point
 ├── .env                  # Environment variables (DATABASE_URL, JWT_SECRET)

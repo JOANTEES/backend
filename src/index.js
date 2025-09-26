@@ -25,6 +25,7 @@ const ordersRoutes = require("./routes/orders");
 const brandsRoutes = require("./routes/brands");
 const categoriesRoutes = require("./routes/categories");
 const productVariantsRoutes = require("./routes/product-variants");
+const reportsRoutes = require("./routes/reports");
 
 // Database connection
 const pool = new Pool({
@@ -68,6 +69,7 @@ app.use("/api/orders", ordersRoutes);
 app.use("/api/brands", brandsRoutes);
 app.use("/api/categories", categoriesRoutes);
 app.use("/api/product-variants", productVariantsRoutes);
+app.use("/api/reports", reportsRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -233,6 +235,22 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     );
     console.log(
       `   PUT /api/product-variants/:id/stock - Update stock quantity (admin only)`
+    );
+    console.log(`📊 Reports & Analytics endpoints:`);
+    console.log(
+      `   GET /api/reports/profit-margins - Get profit margins for all products (admin only)`
+    );
+    console.log(
+      `   GET /api/reports/overall-metrics - Get overall business metrics (admin only)`
+    );
+    console.log(
+      `   GET /api/reports/sales-trends - Get sales trends over time (admin only)`
+    );
+    console.log(
+      `   GET /api/reports/inventory-status - Get inventory status and alerts (admin only)`
+    );
+    console.log(
+      `   GET /api/reports/customer-insights - Get customer insights and analytics (admin only)`
     );
   });
 }

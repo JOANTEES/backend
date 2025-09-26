@@ -26,7 +26,9 @@ For detailed information on API endpoints, data models, and usage, please refer 
 14. [**Brand Management**](./docs/15-brand-management.md)
 15. [**Category Management**](./docs/16-category-management.md)
 16. [**Product Variants**](./docs/17-product-variants.md)
-17. [**Roadmap & Next Steps**](./docs/12-next-steps.md)
+17. [**Reports & Analytics**](./docs/18-reports-analytics.md)
+18. [**Frontend Updates Required**](./docs/19-frontend-updates-required.md)
+19. [**Roadmap & Next Steps**](./docs/12-next-steps.md)
 
 ## 🚀 Getting Started
 
