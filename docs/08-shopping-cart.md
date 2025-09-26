@@ -1,21 +1,23 @@
 # Shopping Cart Endpoints
 
-These endpoints manage the shopping cart for an authenticated user. All routes are protected and require a customer JWT token.
+These endpoints manage the shopping cart for an authenticated user. All routes are protected and require a customer JWT token. The cart system now works with product variants for size/color combinations.
 
 ### Cart Features
 
-- **Stock Management:** Stock quantity automatically reduces when adding to cart and restores when removing.
-- **Transaction Safety:** All operations use database transactions to ensure data consistency.
-- **Activity Logging:** All cart actions are logged in the customer's activity feed.
-- **Smart Totals:** The `GET /api/cart` endpoint automatically calculates subtotal, tax, and shipping using dynamic admin settings. Tax rate, free shipping threshold, and large order handling are all configurable by admins.
-- **Order-Level Delivery Method:** Users choose delivery method (pickup or delivery) for the entire cart, not per item.
-- **Delivery Eligibility Validation:** Cart validates that all items support the selected delivery method. Items can be marked as delivery-only, pickup-only, or both.
-- **Duplicate Prevention:** Adding the same product with the same size/color updates the quantity instead of creating a new entry.
+- **Product Variants:** Add items by variant ID (size/color combinations) instead of individual product attributes
+- **Variant Stock Management:** Real-time stock validation per variant with individual stock quantities
+- **Transaction Safety:** All operations use database transactions to ensure data consistency
+- **Activity Logging:** All cart actions are logged in the customer's activity feed
+- **Smart Totals:** The `GET /api/cart` endpoint automatically calculates subtotal, tax, and shipping using dynamic admin settings
+- **Order-Level Delivery Method:** Users choose delivery method (pickup or delivery) for the entire cart, not per item
+- **Delivery Eligibility Validation:** Cart validates that all items support the selected delivery method
+- **Duplicate Prevention:** Adding the same variant updates the quantity instead of creating a new entry
+- **No Stock Reduction:** Stock is not reduced when adding to cart - only during order creation
 
 ### 1. Get User's Cart
 
 - **URL:** `GET /api/cart`
-- **Description:** Retrieves the contents of the user's cart, including calculated totals.
+- **Description:** Retrieves the contents of the user's cart, including calculated totals and variant information.
 - **Headers:** `Authorization: Bearer <JWT_TOKEN>`
 - **Response (200):**
   ```json
@@ -24,110 +26,314 @@ These endpoints manage the shopping cart for an authenticated user. All routes a
     "message": "Cart retrieved successfully",
     "data": {
       "cart": {
-        "id": "1",
+        "id": "39",
         "deliveryMethod": "delivery",
-        "deliveryZoneId": "1",
-        "deliveryZoneName": "East Legon",
-        "deliveryZoneFee": 15.0,
-        "createdAt": "2024-01-15T10:30:00.000Z",
-        "updatedAt": "2024-01-15T10:30:00.000Z"
+        "deliveryZoneId": null,
+        "deliveryZoneName": null,
+        "deliveryZoneFee": null
       },
       "items": [
         {
-          "id": "1",
-          "productId": "1",
-          "productName": "Classic White T-Shirt",
-          "quantity": 2,
-          "price": 29.99,
+          "id": "82",
+          "productId": "16",
+          "productName": "Nike Air Max",
+          "description": "Comfortable running shoes",
+          "price": 120,
+          "quantity": 3,
+          "variantId": "1",
+          "sku": "NIKE-AM-001-RED-M",
           "size": "M",
-          "color": "White",
+          "color": "Red",
+          "imageUrl": "https://example.com/nike-airmax-red-m.jpg",
+          "stockQuantity": 40,
+          "requiresSpecialDelivery": false,
           "deliveryEligible": true,
           "pickupEligible": true,
+          "subtotal": 360,
+          "createdAt": "2025-09-25T21:45:19.850Z"
+        },
+        {
+          "id": "83",
+          "productId": "16",
+          "productName": "Nike Air Max",
+          "description": "Comfortable running shoes",
+          "price": 120,
+          "quantity": 1,
+          "variantId": "2",
+          "sku": "NIKE-AM-001-RED-L",
+          "size": "L",
+          "color": "Red",
+          "imageUrl": "https://example.com/nike-airmax-red-l.jpg",
+          "stockQuantity": 15,
           "requiresSpecialDelivery": false,
-          "subtotal": 59.98
+          "deliveryEligible": true,
+          "pickupEligible": true,
+          "subtotal": 120,
+          "createdAt": "2025-09-25T21:45:27.634Z"
         }
       ],
       "totals": {
-        "subtotal": 59.98,
-        "tax": 6.0,
-        "shipping": 15.0,
-        "total": 80.98,
+        "subtotal": 480,
+        "tax": 24,
+        "shipping": 0,
+        "total": 504,
         "deliveryEligibilityIssues": null
       },
-      "itemCount": 1
+      "itemCount": 2
     }
   }
   ```
-
-#### Delivery Eligibility Validation
-
-The cart system automatically validates that all items support the selected delivery method:
-
-- **When `deliveryEligibilityIssues` is `null`:** All items in the cart are compatible with the selected delivery method.
-- **When `deliveryEligibilityIssues` contains issues:** Some items are not compatible with the selected delivery method.
-
-**Example of delivery eligibility issues:**
-
-```json
-{
-  "totals": {
-    "subtotal": 59.98,
-    "tax": 6.0,
-    "shipping": 15.0,
-    "total": 80.98,
-    "deliveryEligibilityIssues": [
-      {
-        "type": "not_delivery_eligible",
-        "message": "Some items are not available for delivery",
-        "items": [
-          {
-            "productId": "2",
-            "productName": "Fragile Glass Vase",
-            "message": "This item is not available for delivery"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Frontend should:**
-
-1. Check for `deliveryEligibilityIssues` in the cart response
-2. Display warnings to users about incompatible items
-3. Suggest switching delivery method or removing incompatible items
-4. Prevent order creation when there are eligibility issues
 
 ### 2. Add Item to Cart
 
 - **URL:** `POST /api/cart/add`
-- **Description:** Adds a product to the user's cart or updates its quantity.
+- **Description:** Adds an item to the cart by variant ID. If the variant already exists, it updates the quantity.
 - **Headers:** `Authorization: Bearer <JWT_TOKEN>`
 - **Request Body:**
   ```json
   {
-    "productId": 1,
-    "quantity": 1,
-    "size": "M",
-    "color": "White"
+    "variantId": 1,
+    "quantity": 2
   }
   ```
+
+**Validation Rules:**
+
+- `variantId`: Required, must be a valid variant ID
+- `quantity`: Required, must be at least 1
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Item added to cart",
+  "data": {
+    "cart": {
+      "id": "39",
+      "deliveryMethod": "delivery",
+      "deliveryZoneId": null,
+      "deliveryZoneName": null,
+      "deliveryZoneFee": null
+    },
+    "items": [
+      {
+        "id": "82",
+        "productId": "16",
+        "productName": "Nike Air Max",
+        "description": "Comfortable running shoes",
+        "price": 120,
+        "quantity": 2,
+        "variantId": "1",
+        "sku": "NIKE-AM-001-RED-M",
+        "size": "M",
+        "color": "Red",
+        "imageUrl": "https://example.com/nike-airmax-red-m.jpg",
+        "stockQuantity": 40,
+        "requiresSpecialDelivery": false,
+        "deliveryEligible": true,
+        "pickupEligible": true,
+        "subtotal": 240,
+        "createdAt": "2025-09-25T21:45:19.850Z"
+      }
+    ],
+    "totals": {
+      "subtotal": 240,
+      "tax": 12,
+      "shipping": 0,
+      "total": 252,
+      "deliveryEligibilityIssues": null
+    },
+    "itemCount": 1
+  }
+}
+```
+
+**Error Response (404):**
+
+```json
+{
+  "success": false,
+  "message": "Product variant not found"
+}
+```
+
+**Error Response (400) - Insufficient Stock:**
+
+```json
+{
+  "success": false,
+  "message": "Not enough stock. Only 5 available for this variant."
+}
+```
+
+**Error Response (400) - Product Not Available:**
+
+```json
+{
+  "success": false,
+  "message": "Product is not available"
+}
+```
+
+### 3. Update Cart Item Quantity
+
+- **URL:** `PUT /api/cart/items/:itemId`
+- **Description:** Updates the quantity of a specific cart item.
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Parameters:** `:itemId` - Cart item ID
+- **Request Body:**
+  ```json
+  {
+    "quantity": 3
+  }
+  ```
+
+**Validation Rules:**
+
+- `quantity`: Required, must be at least 1
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Cart item updated successfully",
+  "data": {
+    "cart": {
+      "id": "39",
+      "deliveryMethod": "delivery",
+      "deliveryZoneId": null,
+      "deliveryZoneName": null,
+      "deliveryZoneFee": null
+    },
+    "items": [
+      {
+        "id": "82",
+        "productId": "16",
+        "productName": "Nike Air Max",
+        "description": "Comfortable running shoes",
+        "price": 120,
+        "quantity": 3,
+        "variantId": "1",
+        "sku": "NIKE-AM-001-RED-M",
+        "size": "M",
+        "color": "Red",
+        "imageUrl": "https://example.com/nike-airmax-red-m.jpg",
+        "stockQuantity": 40,
+        "requiresSpecialDelivery": false,
+        "deliveryEligible": true,
+        "pickupEligible": true,
+        "subtotal": 360,
+        "createdAt": "2025-09-25T21:45:19.850Z"
+      }
+    ],
+    "totals": {
+      "subtotal": 360,
+      "tax": 18,
+      "shipping": 0,
+      "total": 378,
+      "deliveryEligibilityIssues": null
+    },
+    "itemCount": 1
+  }
+}
+```
+
+**Error Response (404):**
+
+```json
+{
+  "success": false,
+  "message": "Cart item not found"
+}
+```
+
+**Error Response (400) - Insufficient Stock:**
+
+```json
+{
+  "success": false,
+  "message": "Not enough stock. Only 5 available for this variant."
+}
+```
+
+### 4. Remove Item from Cart
+
+- **URL:** `DELETE /api/cart/items/:itemId`
+- **Description:** Removes a specific item from the cart.
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Parameters:** `:itemId` - Cart item ID
 - **Response (200):**
   ```json
   {
     "success": true,
-    "message": "Item added to cart successfully",
-    "item": {
-      // ... details of the added/updated item
+    "message": "Item removed from cart successfully",
+    "data": {
+      "cart": {
+        "id": "39",
+        "deliveryMethod": "delivery",
+        "deliveryZoneId": null,
+        "deliveryZoneName": null,
+        "deliveryZoneFee": null
+      },
+      "items": [],
+      "totals": {
+        "subtotal": 0,
+        "tax": 0,
+        "shipping": 0,
+        "total": 0,
+        "deliveryEligibilityIssues": null
+      },
+      "itemCount": 0
     }
   }
   ```
 
-### 3. Update Cart Delivery Method
+**Error Response (404):**
+
+```json
+{
+  "success": false,
+  "message": "Cart item not found"
+}
+```
+
+### 5. Clear Cart
+
+- **URL:** `DELETE /api/cart/clear`
+- **Description:** Removes all items from the cart.
+- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "Cart cleared successfully",
+    "data": {
+      "cart": {
+        "id": "39",
+        "deliveryMethod": "delivery",
+        "deliveryZoneId": null,
+        "deliveryZoneName": null,
+        "deliveryZoneFee": null
+      },
+      "items": [],
+      "totals": {
+        "subtotal": 0,
+        "tax": 0,
+        "shipping": 0,
+        "total": 0,
+        "deliveryEligibilityIssues": null
+      },
+      "itemCount": 0
+    }
+  }
+  ```
+
+### 6. Update Delivery Method
 
 - **URL:** `PUT /api/cart/delivery`
-- **Description:** Updates the delivery method and zone for the entire cart.
+- **Description:** Updates the delivery method for the entire cart.
 - **Headers:** `Authorization: Bearer <JWT_TOKEN>`
 - **Request Body:**
   ```json
@@ -136,110 +342,178 @@ The cart system automatically validates that all items support the selected deli
     "deliveryZoneId": 1
   }
   ```
-- **Response (200):**
-  ```json
-  {
-    "success": true,
-    "message": "Cart delivery method updated successfully",
-    "data": {
+
+**Validation Rules:**
+
+- `deliveryMethod`: Required, must be "pickup" or "delivery"
+- `deliveryZoneId`: Required when deliveryMethod is "delivery", must be valid delivery zone ID
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Delivery method updated successfully",
+  "data": {
+    "cart": {
+      "id": "39",
       "deliveryMethod": "delivery",
-      "deliveryZoneId": 1
-    }
-  }
-  ```
-
-### 4. Set Delivery Address (Auto-Determine Zone)
-
-- **URL:** `PUT /api/cart/delivery-address`
-- **Description:** Sets the delivery address and automatically determines the delivery zone.
-  - First tries an exact area match (case-insensitive) against admin-defined `delivery_zone_areas`.
-  - If no exact area match, falls back to any zone that covers the provided `regionId` + `cityId` (area ignored). If multiple zones cover the city, the lowest delivery fee is selected.
-- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
-- **Request Body:**
-  ```json
-  {
-    "regionId": 1,
-    "cityId": 1,
-    "areaName": "East Legon"
-  }
-  ```
-- **Response (200):**
-  ```json
-  {
-    "success": true,
-    "message": "Delivery address set and zone determined automatically.",
-    "data": {
-      "cart": {
-        "id": "1",
-        "deliveryMethod": "delivery",
-        "deliveryZoneId": "1",
-        "deliveryZoneName": "Accra North",
-        "deliveryZoneFee": 20.0
-      },
-      "items": [...],
-      "totals": {...},
-      "itemCount": 2,
-      "determinedZone": {
-        "id": "1",
-        "name": "Accra North",
-        "deliveryFee": 20.0,
-        "estimatedDays": "1-2 days"
+      "deliveryZoneId": "1",
+      "deliveryZoneName": "East Legon",
+      "deliveryZoneFee": 15.0
+    },
+    "items": [
+      {
+        "id": "82",
+        "productId": "16",
+        "productName": "Nike Air Max",
+        "description": "Comfortable running shoes",
+        "price": 120,
+        "quantity": 3,
+        "variantId": "1",
+        "sku": "NIKE-AM-001-RED-M",
+        "size": "M",
+        "color": "Red",
+        "imageUrl": "https://example.com/nike-airmax-red-m.jpg",
+        "stockQuantity": 40,
+        "requiresSpecialDelivery": false,
+        "deliveryEligible": true,
+        "pickupEligible": true,
+        "subtotal": 360,
+        "createdAt": "2025-09-25T21:45:19.850Z"
       }
+    ],
+    "totals": {
+      "subtotal": 360,
+      "tax": 18,
+      "shipping": 15,
+      "total": 393,
+      "deliveryEligibilityIssues": null
+    },
+    "itemCount": 1
+  }
+}
+```
+
+**Error Response (400) - Invalid Delivery Method:**
+
+```json
+{
+  "success": false,
+  "message": "Invalid delivery method."
+}
+```
+
+**Error Response (400) - Missing Delivery Zone:**
+
+```json
+{
+  "success": false,
+  "message": "Delivery Zone ID is required for delivery."
+}
+```
+
+## Cart Item Object Structure
+
+### Cart Item Fields
+
+| Field                     | Type    | Description                                 |
+| ------------------------- | ------- | ------------------------------------------- |
+| `id`                      | string  | Unique cart item identifier                 |
+| `productId`               | string  | Parent product ID                           |
+| `productName`             | string  | Name of the parent product                  |
+| `description`             | string  | Product description                         |
+| `price`                   | number  | Product price                               |
+| `quantity`                | number  | Quantity in cart                            |
+| `variantId`               | string  | Product variant ID (size/color combination) |
+| `sku`                     | string  | Variant SKU                                 |
+| `size`                    | string  | Variant size                                |
+| `color`                   | string  | Variant color                               |
+| `imageUrl`                | string  | Variant-specific image URL                  |
+| `stockQuantity`           | number  | Available stock for this variant            |
+| `requiresSpecialDelivery` | boolean | Whether product requires special delivery   |
+| `deliveryEligible`        | boolean | Whether product can be delivered            |
+| `pickupEligible`          | boolean | Whether product can be picked up            |
+| `subtotal`                | number  | Price × quantity                            |
+| `createdAt`               | string  | ISO timestamp when item was added to cart   |
+
+## Cart Totals Object Structure
+
+### Totals Fields
+
+| Field                       | Type   | Description                               |
+| --------------------------- | ------ | ----------------------------------------- |
+| `subtotal`                  | number | Sum of all item subtotals                 |
+| `tax`                       | number | Calculated tax amount                     |
+| `shipping`                  | number | Delivery/shipping cost                    |
+| `total`                     | number | Final total (subtotal + tax + shipping)   |
+| `deliveryEligibilityIssues` | array  | Issues with delivery method compatibility |
+
+### Delivery Eligibility Issues
+
+When items in the cart are not compatible with the selected delivery method, the `deliveryEligibilityIssues` array will contain objects describing the issues:
+
+```json
+{
+  "type": "not_delivery_eligible",
+  "message": "Some items are not available for delivery",
+  "items": [
+    {
+      "productId": "16",
+      "productName": "Nike Air Max",
+      "message": "This item is not available for delivery"
     }
-  }
-  ```
-  **Notes:**
-- The `areaName` is helpful for a precise match if admins created area-level coverage, but it is not required for coverage. City-level coverage is sufficient if no area row matches.
-- Frontend should send `regionId`, `cityId`, and any user-entered `areaName` string. The backend will handle matching.
+  ]
+}
+```
 
-**Possible 400 response:** Only when no zone exists that covers the specified `regionId` + `cityId`.
+## Frontend Integration Notes
 
-### 5. Update Cart Item Quantity
+### Adding Items to Cart
 
-- **URL:** `PUT /api/cart/:itemId`
-- **Description:** Updates the quantity of a specific item in the cart.
-- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
-- **Parameters:** `:itemId` - The ID of the cart item (not the product ID).
-- **Request Body:**
-  ```json
-  {
-    "quantity": 3
-  }
-  ```
-- **Response (200):**
-  ```json
-  {
-    "success": true,
-    "message": "Cart item updated successfully",
-    "item": {
-      // ... details of the updated item
-    }
-  }
-  ```
+For product detail pages with variants:
 
-### 6. Remove Item from Cart
+1. Display available variants with size/color options
+2. Show stock availability for each variant
+3. Use `variantId` when adding to cart instead of `productId`
+4. Handle out-of-stock variants appropriately
 
-- **URL:** `DELETE /api/cart/:itemId`
-- **Description:** Removes a single item from the cart.
-- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
-- **Parameters:** `:itemId` - The ID of the cart item.
-- **Response (200):**
-  ```json
-  {
-    "success": true,
-    "message": "Item removed from cart successfully"
-  }
-  ```
+### Cart Display
 
-### 7. Clear Entire Cart
+For cart pages:
 
-- **URL:** `DELETE /api/cart/clear`
-- **Description:** Removes all items from the user's cart.
-- **Headers:** `Authorization: Bearer <JWT_TOKEN>`
-- **Response (200):**
-  ```json
-  {
-    "success": true,
-    "message": "Cart cleared successfully"
-  }
-  ```
+1. Display variant information (size, color, SKU)
+2. Show variant-specific images when available
+3. Display stock quantities for each variant
+4. Handle delivery eligibility issues
+
+### Stock Management
+
+For inventory management:
+
+1. Stock is not reduced when adding to cart
+2. Stock is only reduced during order creation
+3. This allows for cart abandonment without affecting inventory
+4. Real-time stock validation prevents overselling
+
+### Error Handling
+
+For user experience:
+
+1. Show clear error messages for stock issues
+2. Handle variant not found errors
+3. Display delivery eligibility issues
+4. Provide fallback options for out-of-stock items
+
+## Error Handling
+
+All endpoints return consistent error responses with:
+
+- `success`: boolean indicating if the request was successful
+- `message`: Human-readable error description
+- `errors`: Array of validation errors (for 400 responses)
+- `error`: Technical error details (for 500 responses)
+
+## Rate Limiting
+
+All cart endpoints require authentication and are subject to rate limiting based on user activity.

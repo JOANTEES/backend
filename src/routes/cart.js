@@ -58,12 +58,13 @@ async function getCartData(userId) {
 
   const itemsResult = await pool.query(
     `SELECT
-      ci.id, ci.quantity, ci.size, ci.color, ci.created_at,
+      ci.id, ci.quantity, ci.created_at,
       p.id AS product_id, p.name AS product_name, p.description, p.price,
-      p.category, p.image_url, p.stock_quantity, p.requires_special_delivery,
-      p.delivery_eligible, p.pickup_eligible
+      p.category, p.requires_special_delivery, p.delivery_eligible, p.pickup_eligible,
+      pv.id AS variant_id, pv.sku, pv.size, pv.color, pv.stock_quantity, pv.image_url
     FROM cart_items ci
     JOIN products p ON ci.product_id = p.id
+    LEFT JOIN product_variants pv ON ci.variant_id = pv.id
     WHERE ci.cart_id = $1 AND p.is_active = true
     ORDER BY ci.created_at DESC`,
     [cart.id]
@@ -99,9 +100,11 @@ async function getCartData(userId) {
       description: item.description,
       price: parseFloat(item.price),
       quantity: item.quantity,
+      variantId: item.variant_id ? item.variant_id.toString() : null,
+      sku: item.sku,
       size: item.size,
       color: item.color,
-      imageUrl: item.image_url,
+      imageUrl: item.image_url || item.product_image_url,
       stockQuantity: item.stock_quantity,
       requiresSpecialDelivery: item.requires_special_delivery,
       deliveryEligible: item.delivery_eligible,
@@ -263,19 +266,17 @@ router.get("/", authenticateUser, async (req, res) => {
   }
 });
 
-// POST /api/cart/add - Add an item to the cart
+// POST /api/cart/add - Add an item to the cart (by variant)
 router.post(
   "/add",
   authenticateUser,
   [
-    body("productId")
+    body("variantId")
       .isInt({ min: 1 })
-      .withMessage("Valid Product ID is required."),
+      .withMessage("Valid Variant ID is required."),
     body("quantity")
       .isInt({ min: 1 })
       .withMessage("Quantity must be at least 1."),
-    body("size").optional().isString().trim(),
-    body("color").optional().isString().trim(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -283,27 +284,34 @@ router.post(
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { productId, quantity, size, color } = req.body;
+    const { variantId, quantity } = req.body;
     const userId = req.user.id;
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
-      const productResult = await client.query(
-        "SELECT name, stock_quantity, is_active FROM products WHERE id = $1 FOR UPDATE",
-        [productId]
+      // Get variant and product info
+      const variantResult = await client.query(
+        `SELECT 
+          pv.id, pv.product_id, pv.sku, pv.size, pv.color, pv.stock_quantity, pv.image_url,
+          p.name as product_name, p.price, p.requires_special_delivery, 
+          p.delivery_eligible, p.pickup_eligible, p.is_active as product_active
+        FROM product_variants pv
+        JOIN products p ON pv.product_id = p.id
+        WHERE pv.id = $1 FOR UPDATE`,
+        [variantId]
       );
 
-      if (productResult.rows.length === 0) {
+      if (variantResult.rows.length === 0) {
         await client.query("ROLLBACK");
         return res
           .status(404)
-          .json({ success: false, message: "Product not found" });
+          .json({ success: false, message: "Product variant not found" });
       }
 
-      const product = productResult.rows[0];
-      if (!product.is_active) {
+      const variant = variantResult.rows[0];
+      if (!variant.product_active) {
         await client.query("ROLLBACK");
         return res
           .status(400)
@@ -312,42 +320,41 @@ router.post(
 
       const cart = await getOrCreateCart(userId);
 
+      // Check if variant already exists in cart
       const existingItem = await client.query(
-        "SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2 AND (size = $3 OR (size IS NULL AND $3 IS NULL)) AND (color = $4 OR (color IS NULL AND $4 IS NULL))",
-        [cart.id, productId, size, color]
+        "SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND variant_id = $2",
+        [cart.id, variantId]
       );
 
       if (existingItem.rows.length > 0) {
         const newQuantity = existingItem.rows[0].quantity + quantity;
-        if (product.stock_quantity < newQuantity) {
+        if (variant.stock_quantity < newQuantity) {
           await client.query("ROLLBACK");
           return res.status(400).json({
             success: false,
-            message: `Not enough stock. Only ${product.stock_quantity} available.`,
+            message: `Not enough stock. Only ${variant.stock_quantity} available for this variant.`,
           });
         }
         await client.query(
-          "UPDATE cart_items SET quantity = $1 WHERE id = $2",
+          "UPDATE cart_items SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
           [newQuantity, existingItem.rows[0].id]
         );
       } else {
-        if (product.stock_quantity < quantity) {
+        if (variant.stock_quantity < quantity) {
           await client.query("ROLLBACK");
           return res.status(400).json({
             success: false,
-            message: `Not enough stock. Only ${product.stock_quantity} available.`,
+            message: `Not enough stock. Only ${variant.stock_quantity} available for this variant.`,
           });
         }
         await client.query(
-          "INSERT INTO cart_items (cart_id, product_id, quantity, size, color) VALUES ($1, $2, $3, $4, $5)",
-          [cart.id, productId, quantity, size, color]
+          "INSERT INTO cart_items (cart_id, product_id, variant_id, quantity) VALUES ($1, $2, $3, $4)",
+          [cart.id, variant.product_id, variantId, quantity]
         );
       }
 
-      await client.query(
-        "UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2",
-        [quantity, productId]
-      );
+      // Note: We don't reduce stock here - that happens during order creation
+      // This allows for cart abandonment without affecting inventory
 
       await client.query("COMMIT");
 
