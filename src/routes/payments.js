@@ -308,43 +308,102 @@ router.post(
               );
               const newOrderId = orderInsert.rows[0].id;
 
-              // Create order items from user's cart
+              // Create order items from user's cart with variant support
               const cartItemsRes = await client.query(
-                `SELECT ci.*, p.name as product_name, p.description as product_description,
-                        p.image_url as product_image_url, p.price as unit_price,
-                        p.requires_special_delivery
+                `SELECT 
+                  ci.*, 
+                  p.name as product_name, p.description as product_description,
+                  p.image_url as product_image_url, p.price as unit_price,
+                  p.discount_price, p.discount_percent, p.cost_price,
+                  p.requires_special_delivery,
+                  pv.id as variant_id, pv.sku as variant_sku,
+                  pv.size as variant_size, pv.color as variant_color,
+                  pv.image_url as variant_image_url, pv.stock_quantity as variant_stock
                  FROM cart_items ci
                  JOIN carts c ON ci.cart_id = c.id
                  JOIN products p ON ci.product_id = p.id
+                 JOIN product_variants pv ON ci.variant_id = pv.id
                  WHERE c.user_id = $1`,
                 [s.user_id]
               );
 
-              for (const item of cartItemsRes.rows) {
+              // Calculate effective pricing for cart items
+              const cartItems = cartItemsRes.rows.map((item) => {
+                const originalPrice = parseFloat(item.unit_price);
+                const discountPrice = item.discount_price
+                  ? parseFloat(item.discount_price)
+                  : null;
+                const discountPercent = item.discount_percent
+                  ? parseFloat(item.discount_percent)
+                  : null;
+
+                let effectivePrice = originalPrice;
+                let discountAmount = 0;
+                let hasDiscount = false;
+
+                if (discountPrice && discountPrice < originalPrice) {
+                  effectivePrice = discountPrice;
+                  discountAmount = originalPrice - discountPrice;
+                  hasDiscount = true;
+                } else if (discountPercent && discountPercent > 0) {
+                  discountAmount = originalPrice * (discountPercent / 100);
+                  effectivePrice = originalPrice - discountAmount;
+                  hasDiscount = true;
+                }
+
+                return {
+                  ...item,
+                  effectivePrice: parseFloat(effectivePrice.toFixed(2)),
+                  discountAmount: parseFloat(discountAmount.toFixed(2)),
+                  hasDiscount: hasDiscount,
+                };
+              });
+
+              for (const item of cartItems) {
+                // Use effective price if available, otherwise fall back to unit_price
+                const itemPrice = item.effectivePrice || item.unit_price;
+
                 await client.query(
                   `INSERT INTO order_items (
-                     order_id, product_id, product_name, product_description,
-                     product_image_url, size, color, quantity, unit_price,
+                     order_id, product_id, variant_id, product_name, product_description,
+                     product_image_url, variant_sku, size, color, quantity, unit_price,
                      subtotal, requires_special_delivery
-                   ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                   ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
                   [
                     newOrderId,
                     item.product_id,
+                    item.variant_id,
                     item.product_name,
                     item.product_description,
-                    item.product_image_url,
-                    item.size,
-                    item.color,
+                    item.variant_image_url || item.product_image_url,
+                    item.variant_sku,
+                    item.variant_size,
+                    item.variant_color,
                     item.quantity,
-                    item.unit_price,
-                    Number(item.unit_price) * item.quantity,
+                    itemPrice,
+                    itemPrice * item.quantity,
                     item.requires_special_delivery,
                   ]
                 );
 
+                // Update variant stock
                 await client.query(
-                  `UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2`,
-                  [item.quantity, item.product_id]
+                  `UPDATE product_variants 
+                   SET stock_quantity = stock_quantity - $1 
+                   WHERE id = $2`,
+                  [item.quantity, item.variant_id]
+                );
+
+                // Update product total stock (sum of all variants)
+                await client.query(
+                  `UPDATE products 
+                   SET stock_quantity = (
+                     SELECT COALESCE(SUM(stock_quantity), 0) 
+                     FROM product_variants 
+                     WHERE product_id = $1
+                   )
+                   WHERE id = $1`,
+                  [item.product_id]
                 );
               }
 
@@ -537,6 +596,113 @@ router.get("/paystack/callback", async (req, res) => {
           ]
         );
         const newOrderId = orderInsert.rows[0].id;
+
+        // Create order items from user's cart with variant support
+        const cartItemsRes = await pool.query(
+          `SELECT 
+            ci.*, 
+            p.name as product_name, p.description as product_description,
+            p.image_url as product_image_url, p.price as unit_price,
+            p.discount_price, p.discount_percent, p.cost_price,
+            p.requires_special_delivery,
+            pv.id as variant_id, pv.sku as variant_sku,
+            pv.size as variant_size, pv.color as variant_color,
+            pv.image_url as variant_image_url, pv.stock_quantity as variant_stock
+           FROM cart_items ci
+           JOIN carts c ON ci.cart_id = c.id
+           JOIN products p ON ci.product_id = p.id
+           JOIN product_variants pv ON ci.variant_id = pv.id
+           WHERE c.user_id = $1`,
+          [s.user_id]
+        );
+
+        // Calculate effective pricing for cart items
+        const cartItems = cartItemsRes.rows.map((item) => {
+          const originalPrice = parseFloat(item.unit_price);
+          const discountPrice = item.discount_price
+            ? parseFloat(item.discount_price)
+            : null;
+          const discountPercent = item.discount_percent
+            ? parseFloat(item.discount_percent)
+            : null;
+
+          let effectivePrice = originalPrice;
+          let discountAmount = 0;
+          let hasDiscount = false;
+
+          if (discountPrice && discountPrice < originalPrice) {
+            effectivePrice = discountPrice;
+            discountAmount = originalPrice - discountPrice;
+            hasDiscount = true;
+          } else if (discountPercent && discountPercent > 0) {
+            discountAmount = originalPrice * (discountPercent / 100);
+            effectivePrice = originalPrice - discountAmount;
+            hasDiscount = true;
+          }
+
+          return {
+            ...item,
+            effectivePrice: parseFloat(effectivePrice.toFixed(2)),
+            discountAmount: parseFloat(discountAmount.toFixed(2)),
+            hasDiscount: hasDiscount,
+          };
+        });
+
+        for (const item of cartItems) {
+          // Use effective price if available, otherwise fall back to unit_price
+          const itemPrice = item.effectivePrice || item.unit_price;
+
+          await pool.query(
+            `INSERT INTO order_items (
+               order_id, product_id, variant_id, product_name, product_description,
+               product_image_url, variant_sku, size, color, quantity, unit_price,
+               subtotal, requires_special_delivery
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [
+              newOrderId,
+              item.product_id,
+              item.variant_id,
+              item.product_name,
+              item.product_description,
+              item.variant_image_url || item.product_image_url,
+              item.variant_sku,
+              item.variant_size,
+              item.variant_color,
+              item.quantity,
+              itemPrice,
+              itemPrice * item.quantity,
+              item.requires_special_delivery,
+            ]
+          );
+
+          // Update variant stock
+          await pool.query(
+            `UPDATE product_variants 
+             SET stock_quantity = stock_quantity - $1 
+             WHERE id = $2`,
+            [item.quantity, item.variant_id]
+          );
+
+          // Update product total stock (sum of all variants)
+          await pool.query(
+            `UPDATE products 
+             SET stock_quantity = (
+               SELECT COALESCE(SUM(stock_quantity), 0) 
+               FROM product_variants 
+               WHERE product_id = $1
+             )
+             WHERE id = $1`,
+            [item.product_id]
+          );
+        }
+
+        // Clear cart
+        await pool.query(
+          `DELETE FROM cart_items USING carts WHERE cart_items.cart_id = carts.id AND carts.user_id = $1`,
+          [s.user_id]
+        );
+        await pool.query(`DELETE FROM carts WHERE user_id = $1`, [s.user_id]);
+
         await pool.query(
           `UPDATE payments SET order_id = $1 WHERE provider_reference = $2 AND order_id IS NULL`,
           [newOrderId, reference]
@@ -738,41 +904,102 @@ router.post("/paystack/verify", async (req, res) => {
         );
         orderId = orderInsert.rows[0].id;
         console.log("[VERIFY] Created order", { orderId, userId: s.user_id });
-        // Insert order items from user's cart (mirror webhook behavior for dev)
+        // Insert order items from user's cart with variant support
         const cartItemsRes = await pool.query(
-          `SELECT ci.*, p.name as product_name, p.description as product_description,
-                  p.image_url as product_image_url, p.price as unit_price,
-                  p.requires_special_delivery
+          `SELECT 
+            ci.*, 
+            p.name as product_name, p.description as product_description,
+            p.image_url as product_image_url, p.price as unit_price,
+            p.discount_price, p.discount_percent, p.cost_price,
+            p.requires_special_delivery,
+            pv.id as variant_id, pv.sku as variant_sku,
+            pv.size as variant_size, pv.color as variant_color,
+            pv.image_url as variant_image_url, pv.stock_quantity as variant_stock
            FROM cart_items ci
            JOIN carts c ON ci.cart_id = c.id
            JOIN products p ON ci.product_id = p.id
+           JOIN product_variants pv ON ci.variant_id = pv.id
            WHERE c.user_id = $1`,
           [s.user_id]
         );
-        for (const item of cartItemsRes.rows) {
+
+        // Calculate effective pricing for cart items
+        const cartItems = cartItemsRes.rows.map((item) => {
+          const originalPrice = parseFloat(item.unit_price);
+          const discountPrice = item.discount_price
+            ? parseFloat(item.discount_price)
+            : null;
+          const discountPercent = item.discount_percent
+            ? parseFloat(item.discount_percent)
+            : null;
+
+          let effectivePrice = originalPrice;
+          let discountAmount = 0;
+          let hasDiscount = false;
+
+          if (discountPrice && discountPrice < originalPrice) {
+            effectivePrice = discountPrice;
+            discountAmount = originalPrice - discountPrice;
+            hasDiscount = true;
+          } else if (discountPercent && discountPercent > 0) {
+            discountAmount = originalPrice * (discountPercent / 100);
+            effectivePrice = originalPrice - discountAmount;
+            hasDiscount = true;
+          }
+
+          return {
+            ...item,
+            effectivePrice: parseFloat(effectivePrice.toFixed(2)),
+            discountAmount: parseFloat(discountAmount.toFixed(2)),
+            hasDiscount: hasDiscount,
+          };
+        });
+
+        for (const item of cartItems) {
+          // Use effective price if available, otherwise fall back to unit_price
+          const itemPrice = item.effectivePrice || item.unit_price;
+
           await pool.query(
             `INSERT INTO order_items (
-               order_id, product_id, product_name, product_description,
-               product_image_url, size, color, quantity, unit_price,
+               order_id, product_id, variant_id, product_name, product_description,
+               product_image_url, variant_sku, size, color, quantity, unit_price,
                subtotal, requires_special_delivery
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [
               orderId,
               item.product_id,
+              item.variant_id,
               item.product_name,
               item.product_description,
-              item.product_image_url,
-              item.size,
-              item.color,
+              item.variant_image_url || item.product_image_url,
+              item.variant_sku,
+              item.variant_size,
+              item.variant_color,
               item.quantity,
-              item.unit_price,
-              Number(item.unit_price) * item.quantity,
+              itemPrice,
+              itemPrice * item.quantity,
               item.requires_special_delivery,
             ]
           );
+
+          // Update variant stock
           await pool.query(
-            `UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2`,
-            [item.quantity, item.product_id]
+            `UPDATE product_variants 
+             SET stock_quantity = stock_quantity - $1 
+             WHERE id = $2`,
+            [item.quantity, item.variant_id]
+          );
+
+          // Update product total stock (sum of all variants)
+          await pool.query(
+            `UPDATE products 
+             SET stock_quantity = (
+               SELECT COALESCE(SUM(stock_quantity), 0) 
+               FROM product_variants 
+               WHERE product_id = $1
+             )
+             WHERE id = $1`,
+            [item.product_id]
           );
         }
         // Upsert completed payment row for the order
