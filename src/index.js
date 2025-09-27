@@ -49,23 +49,32 @@ pool.query("SELECT NOW()", (err, res) => {
 
 // Middleware
 app.use(helmet()); // Security headers
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
-})); // Enable CORS for all routes
+// CORS configuration
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS || "http://localhost:3000"
+).split(",");
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+); // Enable CORS for all routes
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Session middleware for OAuth
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-session-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-}));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "your-session-secret-key",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production", // Use secure cookies in production
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  })
+);
 
 // Initialize Passport
 app.use(passport.initialize());
