@@ -107,10 +107,46 @@ router.get("/", async (req, res) => {
       };
     });
 
+    // Calculate total inventory value based on variants
+    const inventoryValueResult = await pool.query(`
+      SELECT 
+        SUM(
+          CASE 
+            WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+            THEN p.discount_price * COALESCE(variant_stock.total_stock, 0)
+            WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+            THEN (p.price * (1 - p.discount_percent / 100)) * COALESCE(variant_stock.total_stock, 0)
+            ELSE p.price * COALESCE(variant_stock.total_stock, 0)
+          END
+        ) as total_inventory_value,
+        SUM(COALESCE(variant_stock.total_stock, 0)) as total_items_in_stock,
+        COUNT(DISTINCT pv.id) as total_variants
+      FROM products p
+      LEFT JOIN (
+        SELECT 
+          product_id, 
+          SUM(stock_quantity) as total_stock
+        FROM product_variants 
+        WHERE is_active = true
+        GROUP BY product_id
+      ) variant_stock ON p.id = variant_stock.product_id
+      LEFT JOIN product_variants pv ON p.id = pv.product_id AND pv.is_active = true
+      WHERE p.is_active = true
+    `);
+
+    const inventorySummary = inventoryValueResult.rows[0];
+
     res.json({
       success: true,
       message: "Products retrieved successfully",
       count: products.length,
+      inventorySummary: {
+        totalInventoryValue: parseFloat(
+          inventorySummary.total_inventory_value || 0
+        ),
+        totalItemsInStock: parseInt(inventorySummary.total_items_in_stock || 0),
+        totalVariants: parseInt(inventorySummary.total_variants || 0),
+      },
       products: products,
     });
   } catch (error) {

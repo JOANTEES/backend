@@ -103,7 +103,35 @@ interface ProductVariant {
 - `/admin/categories` - Hierarchical category management
 - `/admin/products/:id/variants` - Product variants management
 
-### 1.2 Cart System Updates
+### 1.2 Inventory Summary Update
+
+#### **UPDATED: Products API Response**
+
+The `GET /api/products` endpoint now includes an `inventorySummary` object:
+
+```typescript
+// Updated Products API response
+interface ProductsResponse {
+  success: boolean;
+  message: string;
+  count: number;
+  inventorySummary: {
+    // NEW
+    totalInventoryValue: number; // Total value based on variants + effective prices
+    totalItemsInStock: number; // Total items across all variants
+    totalVariants: number; // Total number of active variants
+  };
+  products: Product[];
+}
+```
+
+**Frontend Action Required:**
+
+- **Replace manual calculation** of total inventory value
+- **Use `inventorySummary.totalInventoryValue`** instead of calculating from individual products
+- **This ensures accuracy** with the new variant-based stock system
+
+### 1.3 Cart System Updates
 
 #### **UPDATED: Cart Items Structure**
 
@@ -265,7 +293,7 @@ GET    /api/reports/customer-insights
 
 ```typescript
 // Updated Product endpoints (now include pricing fields)
-GET    /api/products          // Now returns costPrice, discountPrice, etc.
+GET    /api/products          // Now returns costPrice, discountPrice, etc. + inventorySummary
 POST   /api/products          // Now accepts brandId, categoryId, pricing fields
 PUT    /api/products/:id      // Updated with new fields
 

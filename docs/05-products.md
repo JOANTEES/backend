@@ -108,49 +108,63 @@ The system automatically calculates the effective price based on available disco
 ### 1. Get All Products
 
 - **URL:** `GET /api/products`
-- **Description:** Retrieves all active products with brand and category information
+- **Description:** Retrieves all active products with brand and category information, plus total inventory summary
 - **Headers:** None required
 - **Response (200):**
-  ```json
-  {
-    "success": true,
-    "message": "Products retrieved successfully",
-    "count": 2,
-    "products": [
-      {
-        "id": "16",
-        "name": "Nike Air Max",
-        "description": "Comfortable running shoes",
-        "sku": "NIKE-AM-001",
+
+```json
+{
+  "success": true,
+  "message": "Products retrieved successfully",
+  "count": 2,
+  "inventorySummary": {
+    "totalInventoryValue": 26000,
+    "totalItemsInStock": 248,
+    "totalVariants": 5
+  },
+  "products": [
+    {
+      "id": "16",
+      "name": "Nike Air Max",
+      "description": "Comfortable running shoes",
+      "sku": "NIKE-AM-001",
+      "costPrice": 80,
+      "price": 120,
+      "discountPrice": 100,
+      "discountPercent": 15,
+      "effectivePrice": 100,
+      "profitMargin": {
         "costPrice": 80,
-        "price": 120,
-        "discountPrice": 100,
-        "discountPercent": 15,
-        "effectivePrice": 100,
-        "profitMargin": {
-          "costPrice": 80,
-          "sellingPrice": 100,
-          "profit": 20,
-          "margin": 20
-        },
-        "brand": {
-          "id": "2",
-          "name": "Nike"
-        },
-        "category": {
-          "id": "2",
-          "name": "T-Shirts"
-        },
-        "legacyCategory": "Shoes",
-        "imageUrl": "https://example.com/nike-airmax.jpg",
-        "requiresSpecialDelivery": false,
-        "deliveryEligible": true,
-        "pickupEligible": true,
-        "createdAt": "2025-09-25T21:30:06.557Z"
-      }
-    ]
-  }
-  ```
+        "sellingPrice": 100,
+        "profit": 20,
+        "margin": 20
+      },
+      "brand": {
+        "id": "2",
+        "name": "Nike"
+      },
+      "category": {
+        "id": "2",
+        "name": "T-Shirts"
+      },
+      "legacyCategory": "Shoes",
+      "imageUrl": "https://example.com/nike-airmax.jpg",
+      "requiresSpecialDelivery": false,
+      "deliveryEligible": true,
+      "pickupEligible": true,
+      "createdAt": "2025-09-25T21:30:06.557Z"
+    }
+  ]
+}
+```
+
+**Inventory Summary Fields:**
+
+- `totalInventoryValue`: Total value of all inventory based on effective prices and variant stock
+- `totalItemsInStock`: Total number of items in stock across all variants
+- `totalVariants`: Total number of active product variants
+
+**Important:** The inventory summary is calculated from product variants, not individual product stock quantities. This provides accurate inventory valuation for the variant-based system.
 
 ### 2. Get Single Product
 

@@ -448,14 +448,31 @@ router.get("/inventory-status", adminAuth, async (req, res) => {
       `
     );
 
-    // Get inventory value
+    // Get inventory value based on variants and effective prices
     const inventoryValueResult = await pool.query(
       `
       SELECT 
-        SUM(p.cost_price * p.stock_quantity) as total_inventory_value,
-        SUM(p.stock_quantity) as total_items_in_stock,
-        COUNT(*) as total_products
+        SUM(
+          CASE 
+            WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+            THEN p.discount_price * COALESCE(variant_stock.total_stock, 0)
+            WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+            THEN (p.price * (1 - p.discount_percent / 100)) * COALESCE(variant_stock.total_stock, 0)
+            ELSE p.price * COALESCE(variant_stock.total_stock, 0)
+          END
+        ) as total_inventory_value,
+        SUM(COALESCE(variant_stock.total_stock, 0)) as total_items_in_stock,
+        COUNT(DISTINCT p.id) as total_products,
+        COUNT(DISTINCT pv.id) as total_variants
       FROM products p
+      LEFT JOIN (
+        SELECT 
+          product_id, 
+          SUM(stock_quantity) as total_stock
+        FROM product_variants 
+        WHERE is_active = true
+        GROUP BY product_id
+      ) variant_stock ON p.id = variant_stock.product_id
       WHERE p.is_active = true
       `
     );
@@ -467,9 +484,12 @@ router.get("/inventory-status", adminAuth, async (req, res) => {
       message: "Inventory status retrieved successfully",
       data: {
         summary: {
-          totalInventoryValue: parseFloat(inventoryValue.total_inventory_value),
-          totalItemsInStock: parseInt(inventoryValue.total_items_in_stock),
-          totalProducts: parseInt(inventoryValue.total_products),
+          totalInventoryValue: parseFloat(
+            inventoryValue.total_inventory_value || 0
+          ),
+          totalItemsInStock: parseInt(inventoryValue.total_items_in_stock || 0),
+          totalProducts: parseInt(inventoryValue.total_products || 0),
+          totalVariants: parseInt(inventoryValue.total_variants || 0),
           lowStockThreshold: parseInt(lowStockThreshold),
         },
         lowStockProducts: lowStockResult.rows.map((product) => ({
@@ -495,6 +515,200 @@ router.get("/inventory-status", adminAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch inventory status",
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/reports/inventory-summary - Get detailed inventory summary with variants
+router.get("/inventory-summary", adminAuth, async (req, res) => {
+  try {
+    // Get detailed inventory summary with variants
+    const inventorySummaryResult = await pool.query(
+      `
+      SELECT 
+        p.id,
+        p.name,
+        p.sku,
+        p.price,
+        p.discount_price,
+        p.discount_percent,
+        p.cost_price,
+        b.name as brand_name,
+        c.name as category_name,
+        COALESCE(variant_summary.total_stock, 0) as total_stock,
+        COALESCE(variant_summary.variant_count, 0) as variant_count,
+        CASE 
+          WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+          THEN p.discount_price
+          WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+          THEN p.price * (1 - p.discount_percent / 100)
+          ELSE p.price
+        END as effective_price,
+        CASE 
+          WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+          THEN p.discount_price * COALESCE(variant_summary.total_stock, 0)
+          WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+          THEN (p.price * (1 - p.discount_percent / 100)) * COALESCE(variant_summary.total_stock, 0)
+          ELSE p.price * COALESCE(variant_summary.total_stock, 0)
+        END as inventory_value,
+        CASE 
+          WHEN p.cost_price IS NOT NULL AND p.cost_price > 0
+          THEN (
+            CASE 
+              WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+              THEN p.discount_price
+              WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+              THEN p.price * (1 - p.discount_percent / 100)
+              ELSE p.price
+            END - p.cost_price
+          )
+          ELSE NULL
+        END as profit_per_unit,
+        CASE 
+          WHEN p.cost_price IS NOT NULL AND p.cost_price > 0
+          THEN (
+            (
+              CASE 
+                WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+                THEN p.discount_price
+                WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+                THEN p.price * (1 - p.discount_percent / 100)
+                ELSE p.price
+              END - p.cost_price
+            ) / p.cost_price * 100
+          )
+          ELSE NULL
+        END as margin_percent
+      FROM products p
+      LEFT JOIN brands b ON p.brand_id = b.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN (
+        SELECT 
+          product_id, 
+          SUM(stock_quantity) as total_stock,
+          COUNT(*) as variant_count
+        FROM product_variants 
+        WHERE is_active = true
+        GROUP BY product_id
+      ) variant_summary ON p.id = variant_summary.product_id
+      WHERE p.is_active = true
+      ORDER BY inventory_value DESC
+      `
+    );
+
+    // Get variant details for each product
+    const variantDetailsResult = await pool.query(
+      `
+      SELECT 
+        pv.product_id,
+        pv.id as variant_id,
+        pv.sku as variant_sku,
+        pv.size,
+        pv.color,
+        pv.stock_quantity,
+        pv.image_url as variant_image_url,
+        p.price,
+        p.discount_price,
+        p.discount_percent,
+        CASE 
+          WHEN p.discount_price IS NOT NULL AND p.discount_price < p.price 
+          THEN p.discount_price
+          WHEN p.discount_percent IS NOT NULL AND p.discount_percent > 0 
+          THEN p.price * (1 - p.discount_percent / 100)
+          ELSE p.price
+        END as effective_price
+      FROM product_variants pv
+      JOIN products p ON pv.product_id = p.id
+      WHERE pv.is_active = true AND p.is_active = true
+      ORDER BY pv.product_id, pv.size, pv.color
+      `
+    );
+
+    // Group variants by product
+    const variantsByProduct = {};
+    variantDetailsResult.rows.forEach((variant) => {
+      if (!variantsByProduct[variant.product_id]) {
+        variantsByProduct[variant.product_id] = [];
+      }
+      variantsByProduct[variant.product_id].push({
+        id: variant.variant_id.toString(),
+        sku: variant.variant_sku,
+        size: variant.size,
+        color: variant.color,
+        stockQuantity: variant.stock_quantity,
+        imageUrl: variant.variant_image_url,
+        effectivePrice: parseFloat(variant.effective_price),
+        originalPrice: parseFloat(variant.price),
+        discountPrice: variant.discount_price
+          ? parseFloat(variant.discount_price)
+          : null,
+        discountPercent: variant.discount_percent
+          ? parseFloat(variant.discount_percent)
+          : null,
+      });
+    });
+
+    // Calculate totals
+    const totalInventoryValue = inventorySummaryResult.rows.reduce(
+      (sum, product) => sum + parseFloat(product.inventory_value || 0),
+      0
+    );
+    const totalItemsInStock = inventorySummaryResult.rows.reduce(
+      (sum, product) => sum + parseInt(product.total_stock || 0),
+      0
+    );
+    const totalProducts = inventorySummaryResult.rows.length;
+    const totalVariants = inventorySummaryResult.rows.reduce(
+      (sum, product) => sum + parseInt(product.variant_count || 0),
+      0
+    );
+
+    res.json({
+      success: true,
+      message: "Inventory summary retrieved successfully",
+      data: {
+        summary: {
+          totalInventoryValue: parseFloat(totalInventoryValue.toFixed(2)),
+          totalItemsInStock: totalItemsInStock,
+          totalProducts: totalProducts,
+          totalVariants: totalVariants,
+        },
+        products: inventorySummaryResult.rows.map((product) => ({
+          id: product.id.toString(),
+          name: product.name,
+          sku: product.sku,
+          brand: product.brand_name,
+          category: product.category_name,
+          originalPrice: parseFloat(product.price),
+          discountPrice: product.discount_price
+            ? parseFloat(product.discount_price)
+            : null,
+          discountPercent: product.discount_percent
+            ? parseFloat(product.discount_percent)
+            : null,
+          effectivePrice: parseFloat(product.effective_price),
+          costPrice: product.cost_price ? parseFloat(product.cost_price) : null,
+          profitPerUnit: product.profit_per_unit
+            ? parseFloat(Number(product.profit_per_unit).toFixed(2))
+            : null,
+          marginPercent: product.margin_percent
+            ? parseFloat(Number(product.margin_percent).toFixed(2))
+            : null,
+          totalStock: parseInt(product.total_stock),
+          variantCount: parseInt(product.variant_count),
+          inventoryValue: parseFloat(
+            Number(product.inventory_value).toFixed(2)
+          ),
+          variants: variantsByProduct[product.id] || [],
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching inventory summary:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch inventory summary",
       error: error.message,
     });
   }
