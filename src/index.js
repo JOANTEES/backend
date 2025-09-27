@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const session = require("express-session");
+const passport = require("./config/passport");
 const { Pool } = require("pg");
 require("dotenv").config();
 
@@ -47,9 +49,27 @@ pool.query("SELECT NOW()", (err, res) => {
 
 // Middleware
 app.use(helmet()); // Security headers
-app.use(cors()); // Enable CORS for all routes
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+})); // Enable CORS for all routes
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+
+// Session middleware for OAuth
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -117,6 +137,11 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     console.log(`   POST /api/auth/register - Register new user`);
     console.log(`   POST /api/auth/login - User login`);
     console.log(`   GET /api/auth/profile - Get user profile`);
+    console.log(`   POST /api/auth/refresh - Refresh access token`);
+    console.log(`   POST /api/auth/logout - User logout`);
+    console.log(`   GET /api/auth/google - Initiate Google OAuth`);
+    console.log(`   GET /api/auth/google/callback - Google OAuth callback`);
+    console.log(`   GET /api/auth/oauth/user - Get OAuth user info`);
     console.log(`🛍️ Product endpoints:`);
     console.log(`   GET /api/products - Get all products`);
     console.log(`   GET /api/products/:id - Get product by ID`);

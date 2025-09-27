@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NULL, -- Made nullable for OAuth users
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     role VARCHAR(20) DEFAULT 'customer' CHECK (role IN ('admin', 'customer')),
@@ -13,8 +13,23 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(30),
     department VARCHAR(100),
     last_login TIMESTAMP NULL,
+    refresh_token VARCHAR(500) NULL,
+    refresh_token_expires_at TIMESTAMP NULL,
+    -- Password reset fields
+    reset_token VARCHAR(500) NULL,
+    reset_token_expires_at TIMESTAMP NULL,
+    -- OAuth provider fields
+    oauth_provider VARCHAR(50) NULL, -- 'google', 'facebook', etc.
+    oauth_id VARCHAR(255) NULL, -- Provider's user ID
+    oauth_email VARCHAR(255) NULL, -- Provider's email (may differ from main email)
+    profile_picture_url VARCHAR(500) NULL, -- Profile picture from OAuth provider
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- Ensure OAuth users have either password_hash or oauth_provider
+    CONSTRAINT check_auth_method CHECK (
+        (password_hash IS NOT NULL) OR 
+        (oauth_provider IS NOT NULL AND oauth_id IS NOT NULL)
+    )
 );
 
 -- Brands table for product brands

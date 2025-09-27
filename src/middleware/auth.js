@@ -7,7 +7,9 @@ const auth = (req, res, next) => {
 
     if (!token) {
       return res.status(401).json({
+        success: false,
         message: "Access denied. No token provided.",
+        errorCode: "NO_TOKEN",
       });
     }
 
@@ -18,8 +20,24 @@ const auth = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
+    let errorMessage = "Invalid token";
+    let errorCode = "INVALID_TOKEN";
+
+    if (error.name === "TokenExpiredError") {
+      errorMessage = "Token has expired. Please refresh your token.";
+      errorCode = "TOKEN_EXPIRED";
+    } else if (error.name === "JsonWebTokenError") {
+      errorMessage = "Invalid token format.";
+      errorCode = "INVALID_TOKEN_FORMAT";
+    } else if (error.name === "NotBeforeError") {
+      errorMessage = "Token not active yet.";
+      errorCode = "TOKEN_NOT_ACTIVE";
+    }
+
     res.status(401).json({
-      message: "Invalid token.",
+      success: false,
+      message: errorMessage,
+      errorCode: errorCode,
     });
   }
 };
@@ -32,7 +50,9 @@ const adminAuth = (req, res, next) => {
 
     if (!token) {
       return res.status(401).json({
+        success: false,
         message: "Access denied. No token provided.",
+        errorCode: "NO_TOKEN",
       });
     }
 
@@ -42,7 +62,9 @@ const adminAuth = (req, res, next) => {
     // Check if user is admin
     if (decoded.role !== "admin") {
       return res.status(403).json({
+        success: false,
         message: "Access denied. Admin role required.",
+        errorCode: "INSUFFICIENT_PERMISSIONS",
       });
     }
 
@@ -50,8 +72,24 @@ const adminAuth = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
+    let errorMessage = "Invalid token";
+    let errorCode = "INVALID_TOKEN";
+
+    if (error.name === "TokenExpiredError") {
+      errorMessage = "Token has expired. Please refresh your token.";
+      errorCode = "TOKEN_EXPIRED";
+    } else if (error.name === "JsonWebTokenError") {
+      errorMessage = "Invalid token format.";
+      errorCode = "INVALID_TOKEN_FORMAT";
+    } else if (error.name === "NotBeforeError") {
+      errorMessage = "Token not active yet.";
+      errorCode = "TOKEN_NOT_ACTIVE";
+    }
+
     res.status(401).json({
-      message: "Invalid token.",
+      success: false,
+      message: errorMessage,
+      errorCode: errorCode,
     });
   }
 };

@@ -1,8 +1,39 @@
-# Authentication Endpoints
+# Authentication System
 
-Authentication is handled via JSON Web Tokens (JWT). All protected routes require a `Bearer` token in the `Authorization` header.
+> **⚠️ IMPORTANT:** This documentation has been updated with significant enhancements. For the complete, detailed documentation including token refresh, logout, and frontend integration guide, see **[04-authentication-updated.md](./04-authentication-updated.md)**
 
-The `auth.js` file handles registration and login for all users (both admins and customers). The user's `role` is set to `'customer'` by default upon registration.
+## Overview
+
+Authentication is handled via JSON Web Tokens (JWT) with refresh token support. All protected routes require a `Bearer` token in the `Authorization` header.
+
+The authentication system now includes:
+
+- ✅ Automatic token refresh
+- ✅ Proper logout functionality
+- ✅ Enhanced error handling
+- ✅ Seamless user experience
+- ✅ Google OAuth integration
+- ✅ Support for OAuth-only accounts
+- ✅ Password reset functionality
+- ✅ Email service integration (Resend)
+
+## Quick Reference
+
+| Endpoint                       | Method | Description            |
+| ------------------------------ | ------ | ---------------------- |
+| `/api/auth/register`           | POST   | Register new user      |
+| `/api/auth/login`              | POST   | User login             |
+| `/api/auth/profile`            | GET    | Get user profile       |
+| `/api/auth/refresh`            | POST   | Refresh access token   |
+| `/api/auth/logout`             | POST   | User logout            |
+| `/api/auth/google`             | GET    | Initiate Google OAuth  |
+| `/api/auth/google/callback`    | GET    | Google OAuth callback  |
+| `/api/auth/oauth/user`         | GET    | Get OAuth user info    |
+| `/api/auth/forgot-password`    | POST   | Request password reset |
+| `/api/auth/verify-reset-token` | POST   | Verify reset token     |
+| `/api/auth/reset-password`     | POST   | Reset password         |
+
+**For complete documentation, examples, and frontend integration guide, see [04-authentication-updated.md](./04-authentication-updated.md)**
 
 ### 1. Register a New User
 

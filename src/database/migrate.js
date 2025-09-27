@@ -14,6 +14,20 @@ async function migrate() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token VARCHAR(500) NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_expires_at TIMESTAMP NULL;",
+    // Password reset fields
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(500) NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMP NULL;",
+    // OAuth provider fields
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider VARCHAR(50) NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_id VARCHAR(255) NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_email VARCHAR(255) NULL;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture_url VARCHAR(500) NULL;",
+    // Make password_hash nullable for OAuth users
+    "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;",
+    // Add constraint to ensure users have either password or OAuth
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_auth_method') THEN ALTER TABLE users ADD CONSTRAINT check_auth_method CHECK ((password_hash IS NOT NULL) OR (oauth_provider IS NOT NULL AND oauth_id IS NOT NULL)); END IF; END $$;",
 
     // Products table additive columns
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_special_delivery BOOLEAN DEFAULT false;",
