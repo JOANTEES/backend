@@ -7,6 +7,7 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 const app = express();
+app.set("trust proxy", 1); // Trust the first proxy (e.g., Vercel)
 const PORT = process.env.PORT || 5000;
 
 // Import routes
@@ -54,25 +55,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim());
 
-console.log("🌐 CORS allowed origins:", allowedOrigins);
-
 app.use(
   cors({
-    origin: function (origin, callback) {
-      console.log("🔍 CORS check - Request origin:", origin);
-      console.log("🔍 CORS check - Allowed origins:", allowedOrigins);
-
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        console.log("✅ CORS allowed for origin:", origin);
-        return callback(null, true);
-      } else {
-        console.log("❌ CORS blocked for origin:", origin);
-        return callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowedOrigins,
     credentials: true,
   })
 ); // Enable CORS for all routes
@@ -84,10 +69,11 @@ app.use(
   session({
     secret: process.env.SESSION_SECRET || "your-session-secret-key",
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true, // Force session creation for new users
     cookie: {
-      secure: process.env.NODE_ENV === "production", // Use secure cookies in production
-      maxAge: 15 * 60 * 1000, // 15 minutes (OAuth sessions are short-lived)
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 15 * 60 * 1000,
+      sameSite: "lax",
     },
   })
 );

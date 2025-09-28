@@ -441,7 +441,7 @@ router.get("/google", (req, res, next) => {
     req.query?.next || req.query?.state
       ? String(req.query.next || req.query.state)
       : undefined;
-  return passport.authenticate("google", {
+  passport.authenticate("google", {
     scope: ["profile", "email"],
     state,
   })(req, res, next);
