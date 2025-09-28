@@ -422,8 +422,13 @@ function resolveRedirectBase(req) {
     return nextParam;
   }
 
-  // If state indicates admin, try to choose an admin.* origin
+  // If state indicates admin, choose appropriate admin origin based on environment
   if (req.query?.state === "admin") {
+    // In development, prefer ANY localhost origin over production
+    const localOrigin = allowedOrigins.find((o) => o.includes("localhost"));
+    if (localOrigin) return localOrigin;
+
+    // Fall back to production admin origin if no local development
     const adminOrigin = allowedOrigins.find((o) =>
       /(^https?:\/\/)?admin\./i.test(o)
     );
