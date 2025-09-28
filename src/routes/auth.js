@@ -404,15 +404,48 @@ router.post("/logout", async (req, res) => {
   }
 });
 
+// Helper to resolve a safe redirect target based on ALLOWED_ORIGINS
+function resolveRedirectBase(req) {
+  const allowedOrigins = (
+    process.env.ALLOWED_ORIGINS || "http://localhost:3000"
+  )
+    .split(",")
+    .map((o) => o.trim());
+  const fallback = process.env.FRONTEND_URL || "http://localhost:3000";
+  const nextParam = (req.query?.next || req.query?.state || "").toString();
+
+  // If next is a full URL and starts with an allowed origin, allow it
+  if (
+    nextParam &&
+    allowedOrigins.some((origin) => nextParam.startsWith(origin))
+  ) {
+    return nextParam;
+  }
+
+  // If state indicates admin, try to choose an admin.* origin
+  if (req.query?.state === "admin") {
+    const adminOrigin = allowedOrigins.find((o) =>
+      /(^https?:\/\/)?admin\./i.test(o)
+    );
+    if (adminOrigin) return adminOrigin;
+  }
+
+  return fallback;
+}
+
 // Google OAuth Routes
 
-// Initiate Google OAuth
-router.get(
-  "/google",
-  passport.authenticate("google", {
+// Initiate Google OAuth (accepts optional state/next query)
+router.get("/google", (req, res, next) => {
+  const state =
+    req.query?.next || req.query?.state
+      ? String(req.query.next || req.query.state)
+      : undefined;
+  return passport.authenticate("google", {
     scope: ["profile", "email"],
-  })
-);
+    state,
+  })(req, res, next);
+});
 
 // Google OAuth callback
 router.get(
@@ -451,9 +484,9 @@ router.get(
         [refreshToken, refreshTokenExpiresAt, user.id]
       );
 
-      // Redirect to frontend with tokens
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-      const redirectUrl = `${frontendUrl}/auth/callback?token=${token}&refreshToken=${refreshToken}&success=true`;
+      // Choose redirect base from allowed origins using state/next
+      const redirectBase = resolveRedirectBase(req);
+      const redirectUrl = `${redirectBase}/auth/callback?token=${token}&refreshToken=${refreshToken}&success=true`;
 
       res.redirect(redirectUrl);
     } catch (error) {

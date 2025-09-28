@@ -63,7 +63,7 @@ app.use(
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
-// Session middleware for OAuth
+// Session middleware for OAuth (short-lived sessions, MemoryStore is acceptable)
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "your-session-secret-key",
@@ -71,7 +71,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === "production", // Use secure cookies in production
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 15 * 60 * 1000, // 15 minutes (OAuth sessions are short-lived)
     },
   })
 );
