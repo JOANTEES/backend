@@ -56,20 +56,37 @@ router.get("/", async (req, res) => {
     const result = await pool.query(`
       SELECT 
         p.id, p.name, p.description, p.sku, p.cost_price, p.price, p.discount_price, p.discount_percent,
-        p.brand_id, p.category_id, p.category, p.image_url, p.requires_special_delivery, 
+        p.brand_id, p.category_id, p.category, p.image_url, p.images, p.requires_special_delivery, 
         p.delivery_eligible, p.pickup_eligible, p.created_at,
         b.name as brand_name,
-        c.name as category_name
+        c.name as category_name,
+        COALESCE(
+          ARRAY_AGG(
+            DISTINCT pv.image_url 
+            ORDER BY pv.image_url
+          ) FILTER (WHERE pv.image_url IS NOT NULL AND pv.is_active = true),
+          ARRAY[]::TEXT[]
+        ) as variant_images
       FROM products p
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN product_variants pv ON p.id = pv.product_id
       WHERE p.is_active = true 
+      GROUP BY p.id, p.name, p.description, p.sku, p.cost_price, p.price, p.discount_price, p.discount_percent,
+               p.brand_id, p.category_id, p.category, p.image_url, p.images, p.requires_special_delivery, 
+               p.delivery_eligible, p.pickup_eligible, p.created_at, b.name, c.name
       ORDER BY p.created_at DESC
     `);
 
     const products = result.rows.map((product) => {
       const effectivePrice = calculateEffectivePrice(product);
       const profitMargin = calculateProfitMargin(product);
+
+      // Combine product images with variant images, removing duplicates
+      const productImages = product.images || [];
+      const variantImages = product.variant_images || [];
+      const allImages = [...productImages, ...variantImages];
+      const uniqueImages = [...new Set(allImages)].filter((img) => img); // Remove duplicates and null/empty values
 
       return {
         id: product.id.toString(),
@@ -100,6 +117,7 @@ router.get("/", async (req, res) => {
           : null,
         legacyCategory: product.category,
         imageUrl: product.image_url,
+        images: uniqueImages,
         requiresSpecialDelivery: product.requires_special_delivery,
         deliveryEligible: product.delivery_eligible,
         pickupEligible: product.pickup_eligible,
@@ -175,14 +193,25 @@ router.get("/:id", async (req, res) => {
       `
       SELECT 
         p.id, p.name, p.description, p.sku, p.cost_price, p.price, p.discount_price, p.discount_percent,
-        p.brand_id, p.category_id, p.category, p.image_url, p.requires_special_delivery, 
+        p.brand_id, p.category_id, p.category, p.image_url, p.images, p.requires_special_delivery, 
         p.delivery_eligible, p.pickup_eligible, p.created_at,
         b.name as brand_name,
-        c.name as category_name
+        c.name as category_name,
+        COALESCE(
+          ARRAY_AGG(
+            DISTINCT pv.image_url 
+            ORDER BY pv.image_url
+          ) FILTER (WHERE pv.image_url IS NOT NULL AND pv.is_active = true),
+          ARRAY[]::TEXT[]
+        ) as variant_images
       FROM products p
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN product_variants pv ON p.id = pv.product_id
       WHERE p.id = $1 AND p.is_active = true
+      GROUP BY p.id, p.name, p.description, p.sku, p.cost_price, p.price, p.discount_price, p.discount_percent,
+               p.brand_id, p.category_id, p.category, p.image_url, p.images, p.requires_special_delivery, 
+               p.delivery_eligible, p.pickup_eligible, p.created_at, b.name, c.name
     `,
       [productId]
     );
@@ -197,6 +226,12 @@ router.get("/:id", async (req, res) => {
     const product = result.rows[0];
     const effectivePrice = calculateEffectivePrice(product);
     const profitMargin = calculateProfitMargin(product);
+
+    // Combine product images with variant images, removing duplicates
+    const productImages = product.images || [];
+    const variantImages = product.variant_images || [];
+    const allImages = [...productImages, ...variantImages];
+    const uniqueImages = [...new Set(allImages)].filter((img) => img); // Remove duplicates and null/empty values
 
     res.json({
       success: true,
@@ -230,6 +265,7 @@ router.get("/:id", async (req, res) => {
           : null,
         legacyCategory: product.category,
         imageUrl: product.image_url,
+        images: uniqueImages,
         requiresSpecialDelivery: product.requires_special_delivery,
         deliveryEligible: product.delivery_eligible,
         pickupEligible: product.pickup_eligible,
@@ -254,14 +290,32 @@ router.post(
     body("name").notEmpty().trim().isLength({ min: 1, max: 255 }),
     body("description").optional().trim(),
     body("sku").optional().trim().isLength({ max: 100 }),
-    body("cost_price").optional().isFloat({ min: 0 }),
+    body("cost_price")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined || value === "") return true;
+        return parseFloat(value) >= 0;
+      }),
     body("price").isFloat({ min: 0.01 }),
-    body("discount_price").optional().isFloat({ min: 0.01 }),
-    body("discount_percent").optional().isFloat({ min: 0, max: 100 }),
+    body("discount_price")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined || value === "") return true;
+        return parseFloat(value) > 0.01;
+      }),
+    body("discount_percent")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined || value === "") return true;
+        const num = parseFloat(value);
+        return num >= 0 && num <= 100;
+      }),
     body("brand_id").optional().isInt({ min: 1 }),
     body("category_id").optional().isInt({ min: 1 }),
     body("category").optional().trim(), // Legacy field for backward compatibility
     body("image_url").optional().isURL(),
+    body("images").optional().isArray({ max: 10 }),
+    body("images.*").optional().isString().isLength({ min: 1 }),
     body("requires_special_delivery").optional().isBoolean(),
     body("delivery_eligible").optional().isBoolean(),
     body("pickup_eligible").optional().isBoolean(),
@@ -290,6 +344,7 @@ router.post(
         category_id,
         category, // Legacy field
         image_url,
+        images,
         requires_special_delivery = false,
         delivery_eligible = true,
         pickup_eligible = true,
@@ -357,11 +412,11 @@ router.post(
       const newProduct = await pool.query(
         `INSERT INTO products (
           name, description, sku, cost_price, price, discount_price, discount_percent,
-          brand_id, category_id, category, image_url, requires_special_delivery, 
+          brand_id, category_id, category, image_url, images, requires_special_delivery, 
           delivery_eligible, pickup_eligible
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
         RETURNING id, name, description, sku, cost_price, price, discount_price, discount_percent,
-                  brand_id, category_id, category, image_url, requires_special_delivery, 
+                  brand_id, category_id, category, image_url, images, requires_special_delivery, 
                   delivery_eligible, pickup_eligible, created_at`,
         [
           name,
@@ -375,6 +430,7 @@ router.post(
           category_id,
           category,
           image_url,
+          images || [],
           requires_special_delivery,
           delivery_eligible,
           pickup_eligible,
@@ -409,6 +465,7 @@ router.post(
             : null,
           legacyCategory: product.category,
           imageUrl: product.image_url,
+          images: product.images || [],
           requiresSpecialDelivery: product.requires_special_delivery,
           deliveryEligible: product.delivery_eligible,
           pickupEligible: product.pickup_eligible,
@@ -433,14 +490,32 @@ router.put(
     body("name").optional().trim().isLength({ min: 1, max: 255 }),
     body("description").optional().trim(),
     body("sku").optional().trim().isLength({ max: 100 }),
-    body("cost_price").optional().isFloat({ min: 0 }),
+    body("cost_price")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined || value === "") return true;
+        return parseFloat(value) >= 0;
+      }),
     body("price").optional().isFloat({ min: 0.01 }),
-    body("discount_price").optional().isFloat({ min: 0.01 }),
-    body("discount_percent").optional().isFloat({ min: 0, max: 100 }),
+    body("discount_price")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined || value === "") return true;
+        return parseFloat(value) > 0.01;
+      }),
+    body("discount_percent")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined || value === "") return true;
+        const num = parseFloat(value);
+        return num >= 0 && num <= 100;
+      }),
     body("brand_id").optional().isInt({ min: 1 }),
     body("category_id").optional().isInt({ min: 1 }),
     body("category").optional().trim(), // Legacy field
     body("image_url").optional().isURL(),
+    body("images").optional().isArray({ max: 10 }),
+    body("images.*").optional().isString().isLength({ min: 1 }),
     body("requires_special_delivery").optional().isBoolean(),
     body("delivery_eligible").optional().isBoolean(),
     body("pickup_eligible").optional().isBoolean(),
@@ -477,6 +552,7 @@ router.put(
         category_id,
         category, // Legacy field
         image_url,
+        images,
         requires_special_delivery,
         delivery_eligible,
         pickup_eligible,
@@ -598,6 +674,10 @@ router.put(
         updateFields.push(`image_url = $${paramCount++}`);
         updateValues.push(image_url);
       }
+      if (images !== undefined) {
+        updateFields.push(`images = $${paramCount++}`);
+        updateValues.push(images || []);
+      }
       if (requires_special_delivery !== undefined) {
         updateFields.push(`requires_special_delivery = $${paramCount++}`);
         updateValues.push(requires_special_delivery);
@@ -629,7 +709,7 @@ router.put(
         SET ${updateFields.join(", ")} 
         WHERE id = $${paramCount} 
         RETURNING id, name, description, sku, cost_price, price, discount_price, discount_percent,
-                  brand_id, category_id, category, image_url, requires_special_delivery, 
+                  brand_id, category_id, category, image_url, images, requires_special_delivery, 
                   delivery_eligible, pickup_eligible, created_at, updated_at
       `;
 
@@ -662,6 +742,7 @@ router.put(
             : null,
           legacyCategory: product.category,
           imageUrl: product.image_url,
+          images: product.images || [],
           requiresSpecialDelivery: product.requires_special_delivery,
           deliveryEligible: product.delivery_eligible,
           pickupEligible: product.pickup_eligible,

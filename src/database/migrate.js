@@ -33,6 +33,7 @@ async function migrate() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_special_delivery BOOLEAN DEFAULT false;",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_eligible BOOLEAN DEFAULT true;",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS pickup_eligible BOOLEAN DEFAULT true;",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT[];",
 
     // --- Enhanced Product Management (Brands, Categories, Pricing, Variants) ---
 

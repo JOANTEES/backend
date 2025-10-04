@@ -207,8 +207,55 @@ interface Product {
   variants: ProductVariant[]; // NEW
   deliveryEligible: boolean; // NEW
   pickupEligible: boolean; // NEW
+  imageUrl: string; // Main product image
+  images: string[]; // NEW - All product and variant images combined
 }
 ```
+
+#### **NEW: Multiple Product Images**
+
+Implement enhanced image display for better customer experience:
+
+```typescript
+// Image handling utilities
+interface ProductImageDisplay {
+  mainImage: string; // imageUrl field
+  allImages: string[]; // images array
+  variantImages: string[]; // filtered variant images
+}
+
+// Image gallery component props
+interface ImageGalleryProps {
+  images: string[];
+  mainImage: string;
+  onImageSelect: (imageUrl: string) => void;
+  showThumbnails?: boolean;
+  maxThumbnails?: number;
+}
+```
+
+**Required Image Features:**
+
+1. **Product Listings (Grid/List View)**
+
+   - Display `imageUrl` as primary thumbnail
+   - Show hover effects with additional images from `images` array
+   - Display first 3-4 images as small thumbnails
+   - Fallback to first `images` array item if `imageUrl` is null
+
+2. **Product Detail Pages**
+
+   - Full image gallery with all images from `images` array
+   - Thumbnail navigation below main image
+   - Zoom functionality on individual images
+   - Responsive design for mobile devices
+   - Smooth transitions between images
+
+3. **Variant Selection Integration**
+   - Highlight variant-specific images when variant is selected
+   - Filter `images` array to show relevant variant images
+   - Animate between different variant images
+   - Show variant-specific images in selection interface
 
 #### **NEW: Variant Selection**
 
@@ -217,7 +264,7 @@ Add variant selection to product detail pages:
 - Size dropdown
 - Color selection
 - Stock availability per variant
-- Variant-specific images
+- Variant-specific images (integrated with image gallery)
 
 ### 2.2 Cart System Updates
 
@@ -254,6 +301,43 @@ if (selectedDeliveryMethod === "delivery" && !variant.deliveryEligible) {
   return;
 }
 ```
+
+### 2.4 Image Display Requirements
+
+#### **API Data Structure**
+
+The backend now provides:
+
+- `imageUrl`: Main product image (string)
+- `images`: Array of all product and variant images (string[])
+
+#### **Required Frontend Features**
+
+1. **Product Listings**
+
+   - Display `imageUrl` as primary thumbnail
+   - Show additional images from `images` array on hover
+   - Fallback to first `images` array item if `imageUrl` is null
+
+2. **Product Detail Pages**
+
+   - Create image gallery component using `images` array
+   - Implement thumbnail navigation
+   - Add zoom functionality
+   - Make responsive for mobile devices
+
+3. **Variant Integration**
+   - Filter `images` array based on selected variant
+   - Update gallery when variant selection changes
+   - Show variant-specific images in selection interface
+
+#### **Technical Requirements**
+
+- Handle empty/null image arrays gracefully
+- Implement proper error handling for broken image URLs
+- Optimize image loading (lazy loading, compression)
+- Ensure mobile responsiveness
+- Maintain good UX with smooth transitions
 
 ---
 
@@ -380,6 +464,11 @@ GET    /api/cart              // Now returns variant information
 - [ ] Discount pricing displays correctly
 - [ ] Delivery eligibility validation works
 - [ ] Checkout process handles variants
+- [ ] **NEW**: Product image galleries display correctly
+- [ ] **NEW**: Multiple images show in product listings
+- [ ] **NEW**: Variant selection updates image display
+- [ ] **NEW**: Image zoom functionality works
+- [ ] **NEW**: Mobile responsive image galleries
 
 ---
 

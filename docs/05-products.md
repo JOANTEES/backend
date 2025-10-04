@@ -45,6 +45,13 @@ These endpoints handle the management of products in the e-commerce system with 
   },
   "legacyCategory": "Shoes",
   "imageUrl": "https://example.com/nike-airmax.jpg",
+  "images": [
+    "https://example.com/nike-airmax.jpg",
+    "https://example.com/nike-airmax-side.jpg",
+    "https://example.com/nike-airmax-back.jpg",
+    "https://example.com/nike-airmax-red-m.jpg",
+    "https://example.com/nike-airmax-blue-l.jpg"
+  ],
   "requiresSpecialDelivery": false,
   "deliveryEligible": true,
   "pickupEligible": true,
@@ -71,6 +78,7 @@ These endpoints handle the management of products in the e-commerce system with 
 | `category`                | object  | Category information (if linked)                 |
 | `legacyCategory`          | string  | Legacy category field for backward compatibility |
 | `imageUrl`                | string  | Product image URL (optional)                     |
+| `images`                  | array   | Array of all product and variant image URLs      |
 | `requiresSpecialDelivery` | boolean | Whether product requires special delivery        |
 | `deliveryEligible`        | boolean | Whether product can be delivered                 |
 | `pickupEligible`          | boolean | Whether product can be picked up                 |
@@ -149,6 +157,13 @@ The system automatically calculates the effective price based on available disco
       },
       "legacyCategory": "Shoes",
       "imageUrl": "https://example.com/nike-airmax.jpg",
+      "images": [
+        "https://example.com/nike-airmax.jpg",
+        "https://example.com/nike-airmax-side.jpg",
+        "https://example.com/nike-airmax-back.jpg",
+        "https://example.com/nike-airmax-red-m.jpg",
+        "https://example.com/nike-airmax-blue-l.jpg"
+      ],
       "requiresSpecialDelivery": false,
       "deliveryEligible": true,
       "pickupEligible": true,
@@ -203,6 +218,13 @@ The system automatically calculates the effective price based on available disco
       },
       "legacyCategory": "Shoes",
       "imageUrl": "https://example.com/nike-airmax.jpg",
+      "images": [
+        "https://example.com/nike-airmax.jpg",
+        "https://example.com/nike-airmax-side.jpg",
+        "https://example.com/nike-airmax-back.jpg",
+        "https://example.com/nike-airmax-red-m.jpg",
+        "https://example.com/nike-airmax-blue-l.jpg"
+      ],
       "requiresSpecialDelivery": false,
       "deliveryEligible": true,
       "pickupEligible": true,
@@ -248,6 +270,11 @@ The system automatically calculates the effective price based on available disco
     "category_id": 2,
     "category": "Shoes",
     "image_url": "https://example.com/nike-airmax.jpg",
+    "images": [
+      "https://example.com/nike-airmax.jpg",
+      "https://example.com/nike-airmax-side.jpg",
+      "https://example.com/nike-airmax-back.jpg"
+    ],
     "requires_special_delivery": false,
     "delivery_eligible": true,
     "pickup_eligible": true
@@ -267,6 +294,7 @@ The system automatically calculates the effective price based on available disco
 - `category_id`: Optional, must be valid category ID
 - `category`: Optional, legacy field for backward compatibility
 - `image_url`: Optional, must be valid URL
+- `images`: Optional, array of image URLs (max 10 items), each must be valid URL
 - `requires_special_delivery`: Optional, boolean
 - `delivery_eligible`: Optional, boolean
 - `pickup_eligible`: Optional, boolean
@@ -297,6 +325,11 @@ The system automatically calculates the effective price based on available disco
     "categoryId": "2",
     "legacyCategory": "Shoes",
     "imageUrl": "https://example.com/nike-airmax.jpg",
+    "images": [
+      "https://example.com/nike-airmax.jpg",
+      "https://example.com/nike-airmax-side.jpg",
+      "https://example.com/nike-airmax-back.jpg"
+    ],
     "requiresSpecialDelivery": false,
     "deliveryEligible": true,
     "pickupEligible": true,
@@ -399,6 +432,11 @@ The system automatically calculates the effective price based on available disco
     "categoryId": "2",
     "legacyCategory": "Shoes",
     "imageUrl": "https://example.com/nike-airmax.jpg",
+    "images": [
+      "https://example.com/nike-airmax.jpg",
+      "https://example.com/nike-airmax-side.jpg",
+      "https://example.com/nike-airmax-back.jpg"
+    ],
     "requiresSpecialDelivery": false,
     "deliveryEligible": false,
     "pickupEligible": true,
@@ -469,6 +507,56 @@ Products can be configured with specific delivery eligibility:
 - **Delivery only:** `delivery_eligible: true, pickup_eligible: false` (digital products, services)
 - **Special delivery:** `requires_special_delivery: true` (large items, fragile items)
 
+## Image Handling
+
+### Multiple Product Images
+
+Products now support multiple images through the `images` array field:
+
+- **`imageUrl`**: The main/primary product image (backward compatible)
+- **`images`**: Array containing all product and variant images combined
+- **Variant Images**: Automatically included from product variants
+- **Deduplication**: Duplicate URLs are automatically removed
+- **Ordering**: Images are ordered consistently (product images first, then variant images)
+
+### Image Array Structure
+
+```json
+{
+  "imageUrl": "https://example.com/main-image.jpg",
+  "images": [
+    "https://example.com/main-image.jpg", // Product main image
+    "https://example.com/side-view.jpg", // Product additional images
+    "https://example.com/back-view.jpg", // Product additional images
+    "https://example.com/red-variant-m.jpg", // Variant images
+    "https://example.com/blue-variant-l.jpg" // Variant images
+  ]
+}
+```
+
+### Frontend Display Guidelines
+
+#### Product Listings (Grid/List View)
+
+- **Primary Image**: Use `imageUrl` for the main thumbnail
+- **Hover Effects**: Show additional images from `images` array on hover
+- **Image Gallery**: Display first 3-4 images as small thumbnails
+- **Fallback**: If `imageUrl` is null, use first image from `images` array
+
+#### Product Detail Pages
+
+- **Image Gallery**: Display all images from `images` array
+- **Main Display**: Show `imageUrl` as the primary large image
+- **Thumbnail Navigation**: Show all images as clickable thumbnails
+- **Zoom Functionality**: Allow zooming on individual images
+- **Responsive**: Adapt gallery layout for mobile devices
+
+#### Variant Selection
+
+- **Variant Images**: When user selects a variant, highlight corresponding images
+- **Image Filtering**: Filter `images` array to show variant-specific images
+- **Smooth Transitions**: Animate between different variant images
+
 ## Frontend Integration Notes
 
 ### Product Display
@@ -479,6 +567,7 @@ For product listings and detail pages:
 2. Show `discountPrice` or `discountPercent` for discount indicators
 3. Display `profitMargin` information in admin interfaces
 4. Use `brand` and `category` objects for filtering and navigation
+5. **NEW**: Implement image galleries using the `images` array for better customer experience
 
 ### Product Creation/Editing
 
