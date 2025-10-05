@@ -92,7 +92,7 @@ router.get("/profit-margins", adminAuth, async (req, res) => {
         p.price,
         p.discount_price,
         p.discount_percent,
-        p.stock_quantity,
+        COALESCE(SUM(pv.stock_quantity), 0) as stock_quantity,
         b.name as brand_name,
         c.name as category_name,
         COUNT(oi.id) as total_orders,
@@ -101,10 +101,11 @@ router.get("/profit-margins", adminAuth, async (req, res) => {
       FROM products p
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN product_variants pv ON p.id = pv.product_id AND pv.is_active = true
       LEFT JOIN order_items oi ON p.id = oi.product_id
       WHERE p.is_active = true
       GROUP BY p.id, p.name, p.sku, p.cost_price, p.price, p.discount_price, p.discount_percent, 
-               p.stock_quantity, b.name, c.name
+               b.name, c.name
       ORDER BY ${orderClause} ${sortOrder.toUpperCase()}
       LIMIT $1 OFFSET $2
       `,
@@ -418,14 +419,17 @@ router.get("/inventory-status", adminAuth, async (req, res) => {
         p.id,
         p.name,
         p.sku,
-        p.stock_quantity,
+        COALESCE(SUM(pv.stock_quantity), 0) as stock_quantity,
         b.name as brand_name,
         c.name as category_name
       FROM products p
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.is_active = true AND p.stock_quantity <= $1
-      ORDER BY p.stock_quantity ASC
+      LEFT JOIN product_variants pv ON p.id = pv.product_id AND pv.is_active = true
+      WHERE p.is_active = true
+      GROUP BY p.id, p.name, p.sku, b.name, c.name
+      HAVING COALESCE(SUM(pv.stock_quantity), 0) <= $1
+      ORDER BY stock_quantity ASC
       `,
       [lowStockThreshold]
     );
@@ -437,13 +441,16 @@ router.get("/inventory-status", adminAuth, async (req, res) => {
         p.id,
         p.name,
         p.sku,
-        p.stock_quantity,
+        COALESCE(SUM(pv.stock_quantity), 0) as stock_quantity,
         b.name as brand_name,
         c.name as category_name
       FROM products p
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.is_active = true AND p.stock_quantity = 0
+      LEFT JOIN product_variants pv ON p.id = pv.product_id AND pv.is_active = true
+      WHERE p.is_active = true
+      GROUP BY p.id, p.name, p.sku, b.name, c.name
+      HAVING COALESCE(SUM(pv.stock_quantity), 0) = 0
       ORDER BY p.name ASC
       `
     );

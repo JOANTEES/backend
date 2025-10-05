@@ -560,10 +560,11 @@ router.put(
       await client.query("BEGIN");
 
       const itemResult = await client.query(
-        `SELECT ci.id, ci.quantity, ci.product_id, p.stock_quantity 
+        `SELECT ci.id, ci.quantity, ci.product_id, ci.variant_id, pv.stock_quantity 
              FROM cart_items ci 
              JOIN carts c ON ci.cart_id = c.id
              JOIN products p ON ci.product_id = p.id
+             JOIN product_variants pv ON ci.variant_id = pv.id
              WHERE ci.id = $1 AND c.user_id = $2 FOR UPDATE`,
         [itemId, userId]
       );
@@ -580,19 +581,18 @@ router.put(
 
       if (item.stock_quantity < stockRequired) {
         await client.query("ROLLBACK");
-        return res
-          .status(400)
-          .json({ success: false, message: "Not enough stock." });
+        return res.status(400).json({
+          success: false,
+          message: `Not enough stock. Only ${item.stock_quantity} available for this variant.`,
+        });
       }
 
       await client.query("UPDATE cart_items SET quantity = $1 WHERE id = $2", [
         quantity,
         itemId,
       ]);
-      await client.query(
-        "UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2",
-        [stockRequired, item.product_id]
-      );
+      // Note: Stock is now managed through variants only
+      // No need to update products.stock_quantity as it doesn't exist
 
       await client.query("COMMIT");
 
@@ -648,10 +648,8 @@ router.delete("/:itemId", authenticateUser, async (req, res, next) => {
     const item = itemResult.rows[0];
 
     await client.query("DELETE FROM cart_items WHERE id = $1", [itemId]);
-    await client.query(
-      "UPDATE products SET stock_quantity = stock_quantity + $1 WHERE id = $2",
-      [item.quantity, item.product_id]
-    );
+    // Note: Stock is now managed through variants only
+    // No need to update products.stock_quantity as it doesn't exist
 
     await client.query("COMMIT");
 

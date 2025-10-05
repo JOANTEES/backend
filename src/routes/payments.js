@@ -394,17 +394,8 @@ router.post(
                   [item.quantity, item.variant_id]
                 );
 
-                // Update product total stock (sum of all variants)
-                await client.query(
-                  `UPDATE products 
-                   SET stock_quantity = (
-                     SELECT COALESCE(SUM(stock_quantity), 0) 
-                     FROM product_variants 
-                     WHERE product_id = $1
-                   )
-                   WHERE id = $1`,
-                  [item.product_id]
-                );
+                // Note: Product stock is now managed through variants only
+                // No need to update products.stock_quantity as it doesn't exist
               }
 
               // Attach payments to new order
@@ -683,17 +674,8 @@ router.get("/paystack/callback", async (req, res) => {
             [item.quantity, item.variant_id]
           );
 
-          // Update product total stock (sum of all variants)
-          await pool.query(
-            `UPDATE products 
-             SET stock_quantity = (
-               SELECT COALESCE(SUM(stock_quantity), 0) 
-               FROM product_variants 
-               WHERE product_id = $1
-             )
-             WHERE id = $1`,
-            [item.product_id]
-          );
+          // Note: Product stock is now managed through variants only
+          // No need to update products.stock_quantity as it doesn't exist
         }
 
         // Clear cart
@@ -990,17 +972,8 @@ router.post("/paystack/verify", async (req, res) => {
             [item.quantity, item.variant_id]
           );
 
-          // Update product total stock (sum of all variants)
-          await pool.query(
-            `UPDATE products 
-             SET stock_quantity = (
-               SELECT COALESCE(SUM(stock_quantity), 0) 
-               FROM product_variants 
-               WHERE product_id = $1
-             )
-             WHERE id = $1`,
-            [item.product_id]
-          );
+          // Note: Product stock is now managed through variants only
+          // No need to update products.stock_quantity as it doesn't exist
         }
         // Upsert completed payment row for the order
         if (!paidCustomerEmail) {
