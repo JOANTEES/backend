@@ -1,6 +1,7 @@
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const { Pool } = require("pg");
+const emailService = require("../utils/emailService");
 require("dotenv").config();
 
 const pool = new Pool({
@@ -80,7 +81,18 @@ passport.use(
           ]
         );
 
-        return done(null, newUser.rows[0]);
+        const user = newUser.rows[0];
+
+        // Send welcome email for new Google user (don't wait for it to complete)
+        emailService.sendWelcomeEmail(user).catch((error) => {
+          console.error(
+            "❌ [EMAIL] Welcome email failed for Google user:",
+            user.email,
+            error
+          );
+        });
+
+        return done(null, user);
       } catch (error) {
         console.error("Google OAuth error:", error);
         return done(error, null);
