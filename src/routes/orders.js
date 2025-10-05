@@ -2,6 +2,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const { body, validationResult } = require("express-validator");
 const { auth: authenticateUser, adminAuth } = require("../middleware/auth");
+const emailService = require("../utils/emailService");
 require("dotenv").config();
 
 const router = express.Router();
@@ -509,6 +510,15 @@ router.post(
 
         // Commit transaction
         await pool.query("COMMIT");
+
+        // Send admin notification email (don't wait for it to complete)
+        emailService.sendNewOrderNotification(order.id).catch((error) => {
+          console.error(
+            "❌ [EMAIL] Admin notification failed for order:",
+            order.id,
+            error
+          );
+        });
 
         // Prepare response
         const orderData = {
@@ -1066,6 +1076,15 @@ router.patch(
           [orderId]
         );
       }
+
+      // Send customer notification email for important status changes (don't wait for it to complete)
+      emailService.sendOrderStatusEmail(orderId, status).catch((error) => {
+        console.error(
+          "❌ [EMAIL] Order status email failed for order:",
+          orderId,
+          error
+        );
+      });
 
       return res.json({
         success: true,

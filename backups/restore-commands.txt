@@ -1,0 +1,7 @@
+# Restore Joantee Clean State
+# Run this command to restore to clean state:
+
+psql $DATABASE_URL -f backups/clean-state-2025-10-05.sql
+
+# Or use the restore script:
+# ./backups/restore-clean-state.sh backups/clean-state-2025-10-05.sql

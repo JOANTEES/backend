@@ -6,6 +6,7 @@ const passport = require("passport");
 const { body, validationResult } = require("express-validator");
 const { Pool } = require("pg");
 const { Resend } = require("resend"); // Added for password reset
+const emailService = require("../utils/emailService"); // Added for email notifications
 require("dotenv").config();
 
 const router = express.Router();
@@ -147,15 +148,26 @@ router.post(
         [refreshToken, refreshTokenExpiresAt, newUser.rows[0].id]
       );
 
+      const user = newUser.rows[0];
+
+      // Send welcome email (don't wait for it to complete)
+      emailService.sendWelcomeEmail(user).catch((error) => {
+        console.error(
+          "❌ [EMAIL] Welcome email failed for user:",
+          user.email,
+          error
+        );
+      });
+
       res.status(201).json({
         success: true,
         message: "User registered successfully",
         user: {
-          id: newUser.rows[0].id,
-          email: newUser.rows[0].email,
-          first_name: newUser.rows[0].first_name,
-          last_name: newUser.rows[0].last_name,
-          role: newUser.rows[0].role,
+          id: user.id,
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          role: user.role,
         },
         token,
         refreshToken,

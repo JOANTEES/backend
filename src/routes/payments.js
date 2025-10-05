@@ -2,6 +2,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const { body, validationResult } = require("express-validator");
 const { adminAuth } = require("../middleware/auth");
+const emailService = require("../utils/emailService");
 require("dotenv").config();
 
 const router = express.Router();
@@ -420,6 +421,17 @@ router.post(
               );
 
               await client.query("COMMIT");
+
+              // Send admin notification email (don't wait for it to complete)
+              emailService
+                .sendNewOrderNotification(newOrderId)
+                .catch((error) => {
+                  console.error(
+                    "❌ [EMAIL] Admin notification failed for order:",
+                    newOrderId,
+                    error
+                  );
+                });
             } catch (e) {
               await pool.query("ROLLBACK");
               throw e;
