@@ -20,8 +20,8 @@ const pool = new Pool({
 class EmailService {
   constructor() {
     this.from = process.env.RESEND_DOMAIN
-      ? `JoanTees <noreply@${process.env.RESEND_DOMAIN}>`
-      : "JoanTees <onboarding@resend.dev>";
+      ? `JoanTee <noreply@${process.env.RESEND_DOMAIN}>`
+      : "JoanTee <onboarding@resend.dev>";
   }
 
   // Send welcome email to new user
@@ -37,7 +37,7 @@ class EmailService {
       const { data, error } = await resend.emails.send({
         from: this.from,
         to: [user.email],
-        subject: "Welcome to JoanTees! 🎉",
+        subject: "Welcome to JoanTee! 🎉",
         html: html,
       });
 
@@ -247,9 +247,9 @@ class EmailService {
       const { data, error } = await resend.emails.send({
         from: this.from,
         to: [to],
-        subject: "JoanTees Email Test",
+        subject: "JoanTee Email Test",
         html: `
-          <h2>JoanTees Email Test</h2>
+          <h2>JoanTee Email Test</h2>
           <p>This is a test email to verify that the email service is working correctly.</p>
           <p>Sent at: ${new Date().toLocaleString()}</p>
           <p>If you received this email, the email service is working! ✅</p>

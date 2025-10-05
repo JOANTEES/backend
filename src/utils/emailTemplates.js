@@ -7,7 +7,7 @@ const emailTemplates = {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Welcome to JoanTees</title>
+      <title>Welcome to JoanTee</title>
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -22,12 +22,12 @@ const emailTemplates = {
     <body>
       <div class="container">
         <div class="header">
-          <div class="logo">JoanTees</div>
-          <h1>Welcome to JoanTees!</h1>
+          <div class="logo">JoanTee</div>
+          <h1>Welcome to JoanTee!</h1>
         </div>
         <div class="content">
           <p>Hello ${user.first_name} ${user.last_name},</p>
-          <p>Welcome to JoanTees! We're excited to have you as part of our community.</p>
+          <p>Welcome to JoanTee! We're excited to have you as part of our community.</p>
           
           <div class="highlight">
             <h3>Your Account Details:</h3>
@@ -46,15 +46,15 @@ const emailTemplates = {
           </ul>
           
           <p>If you have any questions, feel free to contact our support team.</p>
-          <p>Thank you for choosing JoanTees!</p>
+          <p>Thank you for choosing JoanTee!</p>
           
-          <p>Best regards,<br>The JoanTees Team</p>
+          <p>Best regards,<br>The JoanTee Team</p>
         </div>
         <div class="footer">
           <p>This email was sent to ${
             user.email
           }. If you did not create an account, please ignore this email.</p>
-          <p>&copy; ${new Date().getFullYear()} JoanTees. All rights reserved.</p>
+          <p>&copy; ${new Date().getFullYear()} JoanTee. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -68,7 +68,7 @@ const emailTemplates = {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Order Confirmation - JoanTees</title>
+      <title>Order Confirmation - JoanTee</title>
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -91,7 +91,7 @@ const emailTemplates = {
     <body>
       <div class="container">
         <div class="header">
-          <div class="logo">JoanTees</div>
+          <div class="logo">JoanTee</div>
           <h1>Order ${order.order_number}</h1>
           <p>Status: <span class="status-badge status-${
             order.status
@@ -176,7 +176,7 @@ const emailTemplates = {
           ${
             order.status === "delivered"
               ? `
-            <p>Your order has been delivered! Thank you for choosing JoanTees.</p>
+            <p>Your order has been delivered! Thank you for choosing JoanTee.</p>
           `
               : ""
           }
@@ -189,15 +189,15 @@ const emailTemplates = {
           }
           
           <p>If you have any questions about your order, please don't hesitate to contact us.</p>
-          <p>Thank you for choosing JoanTees!</p>
+          <p>Thank you for choosing JoanTee!</p>
           
-          <p>Best regards,<br>The JoanTees Team</p>
+          <p>Best regards,<br>The JoanTee Team</p>
         </div>
         <div class="footer">
           <p>This email was sent regarding order ${order.order_number} for ${
     customer.email
   }</p>
-          <p>&copy; ${new Date().getFullYear()} JoanTees. All rights reserved.</p>
+          <p>&copy; ${new Date().getFullYear()} JoanTee. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -211,7 +211,7 @@ const emailTemplates = {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>New Order Alert - JoanTees Admin</title>
+      <title>New Order Alert - JoanTee Admin</title>
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -232,7 +232,7 @@ const emailTemplates = {
     <body>
       <div class="container">
         <div class="header">
-          <div class="logo">JoanTees Admin</div>
+          <div class="logo">JoanTee Admin</div>
           <h1>🚨 NEW ORDER ALERT</h1>
           <p>Order ${order.order_number} - ${order.status.toUpperCase()}</p>
         </div>
@@ -330,7 +330,7 @@ const emailTemplates = {
           <p>This is an automated notification for order ${
             order.order_number
           }</p>
-          <p>&copy; ${new Date().getFullYear()} JoanTees Admin System. All rights reserved.</p>
+          <p>&copy; ${new Date().getFullYear()} JoanTee Admin System. All rights reserved.</p>
         </div>
       </div>
     </body>
