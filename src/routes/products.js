@@ -138,17 +138,17 @@ router.get("/", async (req, res) => {
           END
         ) as total_inventory_value,
         SUM(COALESCE(variant_stock.total_stock, 0)) as total_items_in_stock,
-        COUNT(DISTINCT pv.id) as total_variants
+        SUM(variant_stock.total_variants) as total_variants
       FROM products p
       LEFT JOIN (
         SELECT 
           product_id, 
-          SUM(stock_quantity) as total_stock
+          SUM(stock_quantity) as total_stock,
+          COUNT(id) as total_variants
         FROM product_variants 
         WHERE is_active = true
         GROUP BY product_id
       ) variant_stock ON p.id = variant_stock.product_id
-      LEFT JOIN product_variants pv ON p.id = pv.product_id AND pv.is_active = true
       WHERE p.is_active = true
     `);
 

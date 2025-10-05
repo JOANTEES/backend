@@ -199,13 +199,12 @@ router.get("/overall-metrics", adminAuth, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    let dateFilter = "";
     let params = [];
-
-    if (startDate && endDate) {
-      dateFilter = "WHERE o.created_at >= $1 AND o.created_at <= $2";
-      params = [startDate, endDate];
-    }
+    const hasDateRange = Boolean(startDate && endDate);
+    const dateWhere = hasDateRange
+      ? "WHERE o.created_at >= $1::timestamp AND o.created_at < ($2::date + INTERVAL '1 day')"
+      : "";
+    if (hasDateRange) params = [startDate, endDate];
 
     // Get overall metrics
     const metricsResult = await pool.query(
@@ -222,7 +221,7 @@ router.get("/overall-metrics", adminAuth, async (req, res) => {
       FROM orders o
       LEFT JOIN order_items oi ON o.id = oi.order_id
       LEFT JOIN products p ON oi.product_id = p.id
-      ${dateFilter}
+      ${dateWhere}
       `,
       params
     );
@@ -248,7 +247,7 @@ router.get("/overall-metrics", adminAuth, async (req, res) => {
       FROM products p
       JOIN order_items oi ON p.id = oi.product_id
       JOIN orders o ON oi.order_id = o.id
-      ${dateFilter.replace("o.created_at", "o.created_at")}
+      ${dateWhere}
       GROUP BY p.id, p.name, p.sku
       ORDER BY total_quantity_sold DESC
       LIMIT 10
@@ -263,8 +262,8 @@ router.get("/overall-metrics", adminAuth, async (req, res) => {
         delivery_method,
         COUNT(*) as order_count,
         SUM(total_amount) as total_revenue
-      FROM orders
-      ${dateFilter}
+      FROM orders o
+      ${dateWhere}
       GROUP BY delivery_method
       `,
       params
@@ -277,8 +276,8 @@ router.get("/overall-metrics", adminAuth, async (req, res) => {
         payment_method,
         COUNT(*) as order_count,
         SUM(total_amount) as total_revenue
-      FROM orders
-      ${dateFilter}
+      FROM orders o
+      ${dateWhere}
       GROUP BY payment_method
       `,
       params
@@ -359,13 +358,12 @@ router.get("/sales-trends", adminAuth, async (req, res) => {
         break;
     }
 
-    let dateFilter = "";
     let params = [];
-
-    if (startDate && endDate) {
-      dateFilter = "WHERE o.created_at >= $1 AND o.created_at <= $2";
-      params = [startDate, endDate];
-    }
+    const hasDateRange = Boolean(startDate && endDate);
+    const dateFilter = hasDateRange
+      ? "WHERE o.created_at >= $1::timestamp AND o.created_at < ($2::date + INTERVAL '1 day')"
+      : "";
+    if (hasDateRange) params = [startDate, endDate];
 
     const trendsResult = await pool.query(
       `
@@ -470,12 +468,13 @@ router.get("/inventory-status", adminAuth, async (req, res) => {
         ) as total_inventory_value,
         SUM(COALESCE(variant_stock.total_stock, 0)) as total_items_in_stock,
         COUNT(DISTINCT p.id) as total_products,
-        COUNT(DISTINCT pv.id) as total_variants
+        SUM(variant_stock.total_variants) as total_variants
       FROM products p
       LEFT JOIN (
         SELECT 
           product_id, 
-          SUM(stock_quantity) as total_stock
+          SUM(stock_quantity) as total_stock,
+          COUNT(id) as total_variants
         FROM product_variants 
         WHERE is_active = true
         GROUP BY product_id
@@ -726,13 +725,15 @@ router.get("/customer-insights", adminAuth, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    let dateFilter = "";
     let params = [];
-
-    if (startDate && endDate) {
-      dateFilter = "WHERE o.created_at >= $1 AND o.created_at <= $2";
-      params = [startDate, endDate];
-    }
+    const hasDateRange = Boolean(startDate && endDate);
+    const dateFilterWhere = hasDateRange
+      ? "WHERE o.created_at >= $1::timestamp AND o.created_at < ($2::date + INTERVAL '1 day')"
+      : "";
+    const dateFilterAnd = hasDateRange
+      ? "AND o.created_at >= $1::timestamp AND o.created_at < ($2::date + INTERVAL '1 day')"
+      : "";
+    if (hasDateRange) params = [startDate, endDate];
 
     // Get customer metrics
     const customerMetricsResult = await pool.query(
@@ -746,7 +747,7 @@ router.get("/customer-insights", adminAuth, async (req, res) => {
       FROM users u
       LEFT JOIN orders o ON u.id = o.user_id
       WHERE u.role = 'customer'
-      ${dateFilter}
+      ${dateFilterAnd}
       `,
       params
     );
@@ -766,7 +767,7 @@ router.get("/customer-insights", adminAuth, async (req, res) => {
       FROM users u
       JOIN orders o ON u.id = o.user_id
       WHERE u.role = 'customer'
-      ${dateFilter}
+      ${dateFilterAnd}
       GROUP BY u.id, u.first_name, u.last_name, u.email
       ORDER BY total_spent DESC
       LIMIT 10
