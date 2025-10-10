@@ -156,7 +156,7 @@ class EmailService {
       const adminResult = await pool.query(`
         SELECT email, first_name, last_name
         FROM users
-        WHERE is_admin = true AND is_active = true
+        WHERE role = 'admin' AND is_active = true
       `);
 
       if (adminResult.rows.length === 0) {

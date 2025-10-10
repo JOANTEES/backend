@@ -1023,7 +1023,6 @@ router.get("/admin/:id(\\d+)", adminAuth, async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
-module.exports = router;
 
 // PATCH /api/orders/:id/status - Admin: update order status (and sync payments)
 router.patch(
@@ -1206,3 +1205,5 @@ router.post("/:id/pay/initialize", authenticateUser, async (req, res) => {
     });
   }
 });
+
+module.exports = router;
