@@ -222,6 +222,13 @@ const emailTemplates = {
           </table>
           
           ${
+            order.status === "pending"
+              ? `
+            <p><strong>Payment successful!</strong> Thank you for your order. We have received your payment and your order is being processed. You will receive another notification once we confirm and prepare your order for delivery.</p>
+          `
+              : ""
+          }
+          ${
             order.status === "confirmed"
               ? `
             <p>Your order has been confirmed and is being prepared. We'll notify you when it's ready for shipping.</p>

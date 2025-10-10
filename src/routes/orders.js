@@ -1093,7 +1093,16 @@ router.patch(
         );
       }
 
-      // Send customer notification email for important status changes (don't wait for it to complete)
+      const response = {
+        success: true,
+        message: "Order status updated",
+        order: result.rows[0],
+      };
+
+      // Send customer notification email for important status changes AFTER responding
+      res.json(response);
+
+      // Trigger email after response is sent
       console.log(
         `📧 [EMAIL-TRIGGER] Attempting to send status email for order ${orderId}, status: ${status}`
       );
@@ -1103,12 +1112,6 @@ router.patch(
           orderId,
           error
         );
-      });
-
-      return res.json({
-        success: true,
-        message: "Order status updated",
-        order: result.rows[0],
       });
     } catch (error) {
       console.error("Error updating order status:", error);
