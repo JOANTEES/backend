@@ -423,11 +423,28 @@ router.post(
               await client.query("COMMIT");
 
               // Send admin notification email (don't wait for it to complete)
+              console.log(
+                `📧 [EMAIL-TRIGGER] Payment verified, order created: ${newOrderId}, triggering admin notification...`
+              );
               emailService
                 .sendNewOrderNotification(newOrderId)
                 .catch((error) => {
                   console.error(
                     "❌ [EMAIL] Admin notification failed for order:",
+                    newOrderId,
+                    error
+                  );
+                });
+
+              // Send customer order confirmation email (don't wait for it to complete)
+              console.log(
+                `📧 [EMAIL-TRIGGER] Payment verified, order created: ${newOrderId}, sending customer confirmation...`
+              );
+              emailService
+                .sendOrderStatusEmail(newOrderId, "pending")
+                .catch((error) => {
+                  console.error(
+                    "❌ [EMAIL] Customer confirmation failed for order:",
                     newOrderId,
                     error
                   );
@@ -1038,6 +1055,30 @@ router.post("/paystack/verify", async (req, res) => {
           [s.id]
         );
         console.log("[VERIFY] Marked session paid", { sessionId: s.id });
+
+        // Send admin notification email (don't wait for it to complete)
+        console.log(
+          `📧 [EMAIL-TRIGGER] Payment verified (cart flow), order created: ${orderId}, triggering admin notification...`
+        );
+        emailService.sendNewOrderNotification(orderId).catch((error) => {
+          console.error(
+            "❌ [EMAIL] Admin notification failed for order:",
+            orderId,
+            error
+          );
+        });
+
+        // Send customer order confirmation email (don't wait for it to complete)
+        console.log(
+          `📧 [EMAIL-TRIGGER] Payment verified (cart flow), order created: ${orderId}, sending customer confirmation...`
+        );
+        emailService.sendOrderStatusEmail(orderId, "pending").catch((error) => {
+          console.error(
+            "❌ [EMAIL] Customer confirmation failed for order:",
+            orderId,
+            error
+          );
+        });
       }
     }
 

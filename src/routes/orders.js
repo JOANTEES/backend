@@ -512,6 +512,9 @@ router.post(
         await pool.query("COMMIT");
 
         // Send admin notification email (don't wait for it to complete)
+        console.log(
+          `📧 [EMAIL-TRIGGER] New order created: ${order.id}, triggering admin notification...`
+        );
         emailService.sendNewOrderNotification(order.id).catch((error) => {
           console.error(
             "❌ [EMAIL] Admin notification failed for order:",
@@ -519,6 +522,20 @@ router.post(
             error
           );
         });
+
+        // Send customer order confirmation email (don't wait for it to complete)
+        console.log(
+          `📧 [EMAIL-TRIGGER] New order created: ${order.id}, sending customer confirmation...`
+        );
+        emailService
+          .sendOrderStatusEmail(order.id, "pending")
+          .catch((error) => {
+            console.error(
+              "❌ [EMAIL] Customer confirmation failed for order:",
+              order.id,
+              error
+            );
+          });
 
         // Prepare response
         const orderData = {
@@ -1077,6 +1094,9 @@ router.patch(
       }
 
       // Send customer notification email for important status changes (don't wait for it to complete)
+      console.log(
+        `📧 [EMAIL-TRIGGER] Attempting to send status email for order ${orderId}, status: ${status}`
+      );
       emailService.sendOrderStatusEmail(orderId, status).catch((error) => {
         console.error(
           "❌ [EMAIL] Order status email failed for order:",

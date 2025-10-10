@@ -1,3 +1,30 @@
+// Helper function to safely parse delivery address
+const parseAddress = (address) => {
+  if (!address) return null;
+  try {
+    return typeof address === "string" ? JSON.parse(address) : address;
+  } catch (e) {
+    console.error("Failed to parse address:", address, e);
+    return null;
+  }
+};
+
+// Helper function to convert status to human-readable format
+const getStatusText = (status) => {
+  const statusMap = {
+    pending: "Pending",
+    confirmed: "Confirmed",
+    out_for_delivery: "Out for Delivery",
+    shipped: "Shipped",
+    delivered: "Delivered",
+    cancelled: "Cancelled",
+  };
+  return (
+    statusMap[status] ||
+    status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ")
+  );
+};
+
 // Email templates for various notifications
 const emailTemplates = {
   // Welcome email for new user registration
@@ -95,11 +122,13 @@ const emailTemplates = {
           <h1>Order ${order.order_number}</h1>
           <p>Status: <span class="status-badge status-${
             order.status
-          }">${order.status.toUpperCase()}</span></p>
+          }">${getStatusText(order.status).toUpperCase()}</span></p>
         </div>
         <div class="content">
           <p>Hello ${customer.first_name} ${customer.last_name},</p>
-          <p>Your order has been <strong>${order.status}</strong>!</p>
+          <p>Your order has been <strong>${getStatusText(
+            order.status
+          )}</strong>!</p>
           
           <div class="order-details">
             <h3>Order Details</h3>
@@ -111,14 +140,21 @@ const emailTemplates = {
             <p><strong>Delivery Method:</strong> ${order.delivery_method}</p>
             ${
               order.delivery_address
-                ? `
+                ? (() => {
+                    const addr = parseAddress(order.delivery_address);
+                    return `
               <p><strong>Delivery Address:</strong><br>
-              ${JSON.parse(order.delivery_address).street}<br>
-              ${JSON.parse(order.delivery_address).area}, ${
-                    JSON.parse(order.delivery_address).city
-                  }<br>
-              ${JSON.parse(order.delivery_address).region}</p>
-            `
+              ${addr.areaName}, ${addr.cityName}<br>
+              ${addr.regionName}<br>
+              ${addr.contactPhone ? `Phone: ${addr.contactPhone}<br>` : ""}
+              ${addr.landmark ? `Landmark: ${addr.landmark}<br>` : ""}
+              ${
+                addr.additionalInstructions
+                  ? `Instructions: ${addr.additionalInstructions}`
+                  : ""
+              }</p>
+            `;
+                  })()
                 : ""
             }
           </div>
@@ -150,6 +186,32 @@ const emailTemplates = {
               `
                 )
                 .join("")}
+              <tr>
+                <td colspan="4"><strong>Subtotal</strong></td>
+                <td><strong>GH₵${parseFloat(order.subtotal).toFixed(
+                  2
+                )}</strong></td>
+              </tr>
+              ${
+                parseFloat(order.shipping_fee) > 0
+                  ? `
+              <tr>
+                <td colspan="4">Shipping Fee</td>
+                <td>GH₵${parseFloat(order.shipping_fee).toFixed(2)}</td>
+              </tr>
+              `
+                  : ""
+              }
+              ${
+                parseFloat(order.tax_amount) > 0
+                  ? `
+              <tr>
+                <td colspan="4">Tax</td>
+                <td>GH₵${parseFloat(order.tax_amount).toFixed(2)}</td>
+              </tr>
+              `
+                  : ""
+              }
               <tr class="total-row">
                 <td colspan="4"><strong>Total Amount</strong></td>
                 <td><strong>GH₵${parseFloat(order.total_amount).toFixed(
@@ -163,6 +225,13 @@ const emailTemplates = {
             order.status === "confirmed"
               ? `
             <p>Your order has been confirmed and is being prepared. We'll notify you when it's ready for shipping.</p>
+          `
+              : ""
+          }
+          ${
+            order.status === "out_for_delivery"
+              ? `
+            <p><strong>Your order is out for delivery!</strong> Please keep your phone close as our delivery person will be calling you soon to confirm your location and arrange delivery.</p>
           `
               : ""
           }
@@ -211,39 +280,33 @@ const emailTemplates = {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>New Order Alert - JoanTee Admin</title>
+      <title>New Order - JoanTee Admin</title>
       <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #dc3545; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; color: white; }
-        .content { background-color: #ffffff; padding: 30px; border: 1px solid #e9ecef; }
-        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6c757d; }
-        .logo { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-        .alert { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .order-details { background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0; }
-        .customer-details { background-color: #e3f2fd; padding: 20px; border-radius: 5px; margin: 20px 0; }
+        .header { background-color: #fff; padding: 20px; border-bottom: 2px solid #333; }
+        .content { background-color: #ffffff; padding: 30px; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+        h1 { font-size: 20px; color: #333; margin: 0 0 10px 0; }
+        .order-details { padding: 15px 0; border-bottom: 1px solid #ddd; margin: 15px 0; }
+        .customer-details { padding: 15px 0; border-bottom: 1px solid #ddd; margin: 15px 0; }
         .items-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .items-table th, .items-table td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
-        .items-table th { background-color: #e9ecef; font-weight: bold; }
-        .total-row { font-weight: bold; background-color: #dc3545; color: white; }
-        .button { display: inline-block; background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .items-table th, .items-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        .items-table th { background-color: #f5f5f5; font-weight: bold; }
+        .total-row { font-weight: bold; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
-          <div class="logo">JoanTee Admin</div>
-          <h1>🚨 NEW ORDER ALERT</h1>
+          <h1>New Order Notification</h1>
           <p>Order ${order.order_number} - ${order.status.toUpperCase()}</p>
         </div>
         <div class="content">
-          <div class="alert">
-            <h3>⚠️ Action Required</h3>
-            <p>A new order has been placed and requires your attention.</p>
-          </div>
+          <p><strong>A new order has been placed and requires your attention.</strong></p>
           
           <div class="order-details">
-            <h3>📦 Order Information</h3>
+            <h3>Order Information</h3>
             <p><strong>Order Number:</strong> ${order.order_number}</p>
             <p><strong>Order Date:</strong> ${new Date(
               order.created_at
@@ -256,20 +319,27 @@ const emailTemplates = {
             ).toFixed(2)}</p>
             ${
               order.delivery_address
-                ? `
+                ? (() => {
+                    const addr = parseAddress(order.delivery_address);
+                    return `
               <p><strong>Delivery Address:</strong><br>
-              ${JSON.parse(order.delivery_address).street}<br>
-              ${JSON.parse(order.delivery_address).area}, ${
-                    JSON.parse(order.delivery_address).city
-                  }<br>
-              ${JSON.parse(order.delivery_address).region}</p>
-            `
+              ${addr.areaName}, ${addr.cityName}<br>
+              ${addr.regionName}<br>
+              ${addr.contactPhone ? `Phone: ${addr.contactPhone}<br>` : ""}
+              ${addr.landmark ? `Landmark: ${addr.landmark}<br>` : ""}
+              ${
+                addr.additionalInstructions
+                  ? `Instructions: ${addr.additionalInstructions}`
+                  : ""
+              }</p>
+            `;
+                  })()
                 : ""
             }
           </div>
           
           <div class="customer-details">
-            <h3>👤 Customer Information</h3>
+            <h3>Customer Information</h3>
             <p><strong>Name:</strong> ${customer.first_name} ${
     customer.last_name
   }</p>
