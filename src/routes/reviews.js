@@ -36,7 +36,54 @@ async function checkForInappropriateContent(text) {
   }
 }
 
-// GET /api/reviews - Get public reviews (approved and not flagged)
+/**
+ * @swagger
+ * /api/reviews:
+ *   get:
+ *     summary: Get public reviews
+ *     description: Retrieve all approved and non-flagged reviews with pagination
+ *     tags: [Reviews]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of reviews per page
+ *     responses:
+ *       200:
+ *         description: List of approved reviews
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 reviews:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Review'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     currentPage:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     totalReviews:
+ *                       type: integer
+ *                     hasNextPage:
+ *                       type: boolean
+ *                     hasPrevPage:
+ *                       type: boolean
+ */
 router.get("/", async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -79,7 +126,55 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/reviews - Create a new review
+/**
+ * @swagger
+ * /api/reviews:
+ *   post:
+ *     summary: Create a new review
+ *     description: Submit a new review. Auto-approves clean reviews, flags inappropriate content.
+ *     tags: [Reviews]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - rating
+ *               - review_text
+ *             properties:
+ *               rating:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 5
+ *                 description: Star rating (1-5)
+ *               review_text:
+ *                 type: string
+ *                 description: Review content
+ *               guest_name:
+ *                 type: string
+ *                 description: Required when user is not signed in
+ *     responses:
+ *       201:
+ *         description: Review created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 review:
+ *                   $ref: '#/components/schemas/Review'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post("/", async (req, res) => {
   try {
     const { rating, review_text, guest_name } = req.body;
@@ -165,7 +260,50 @@ router.post("/", async (req, res) => {
   }
 });
 
-// POST /api/reviews/:id/flag - Flag a review (manual flagging by users)
+/**
+ * @swagger
+ * /api/reviews/{id}/flag:
+ *   post:
+ *     summary: Flag a review
+ *     description: Manually flag a review for inappropriate content
+ *     tags: [Reviews]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Review ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 description: Reason for flagging
+ *                 example: "Inappropriate content"
+ *     responses:
+ *       200:
+ *         description: Review flagged successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Review not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post("/:id/flag", async (req, res) => {
   try {
     const reviewId = req.params.id;
@@ -204,7 +342,73 @@ router.post("/:id/flag", async (req, res) => {
 });
 
 // Admin routes - require authentication
-// GET /api/reviews/admin - Get all reviews for admin management
+/**
+ * @swagger
+ * /api/reviews/admin:
+ *   get:
+ *     summary: Get all reviews for admin management
+ *     description: Retrieve all reviews with filtering options for admin moderation
+ *     tags: [Reviews - Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of reviews per page
+ *       - in: query
+ *         name: filter
+ *         schema:
+ *           type: string
+ *           enum: [all, flagged, pending, approved]
+ *           default: all
+ *         description: Filter reviews by status
+ *     responses:
+ *       200:
+ *         description: List of reviews with admin details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 reviews:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/Review'
+ *                       - type: object
+ *                         properties:
+ *                           email:
+ *                             type: string
+ *                             nullable: true
+ *                 pagination:
+ *                   type: object
+ *                 filters:
+ *                   type: object
+ *                   properties:
+ *                     current:
+ *                       type: string
+ *                     available:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/admin", auth, async (req, res) => {
   try {
     if (req.user.role !== "admin") {
@@ -282,7 +486,49 @@ router.get("/admin", auth, async (req, res) => {
   }
 });
 
-// PUT /api/reviews/admin/:id/approve - Approve a flagged review
+/**
+ * @swagger
+ * /api/reviews/admin/{id}/approve:
+ *   put:
+ *     summary: Approve a flagged review
+ *     description: Approve a review that was flagged for moderation
+ *     tags: [Reviews - Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Review ID
+ *     responses:
+ *       200:
+ *         description: Review approved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 review:
+ *                   $ref: '#/components/schemas/Review'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Review not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/admin/:id/approve", auth, async (req, res) => {
   try {
     if (req.user.role !== "admin") {
@@ -320,7 +566,47 @@ router.put("/admin/:id/approve", auth, async (req, res) => {
   }
 });
 
-// DELETE /api/reviews/admin/:id - Remove a review
+/**
+ * @swagger
+ * /api/reviews/admin/{id}:
+ *   delete:
+ *     summary: Remove a review
+ *     description: Permanently delete a review
+ *     tags: [Reviews - Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Review ID
+ *     responses:
+ *       200:
+ *         description: Review removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Review not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete("/admin/:id", auth, async (req, res) => {
   try {
     if (req.user.role !== "admin") {

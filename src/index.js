@@ -31,6 +31,10 @@ const productVariantsRoutes = require("./routes/product-variants");
 const reportsRoutes = require("./routes/reports");
 const reviewsRoutes = require("./routes/reviews");
 
+// Swagger documentation
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpecs = require("./config/swagger");
+
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -103,6 +107,16 @@ app.use("/api/categories", categoriesRoutes);
 app.use("/api/product-variants", productVariantsRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/reviews", reviewsRoutes);
+
+// Swagger documentation
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpecs, {
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "JoanTee API Documentation",
+  })
+);
 
 // Test route
 app.get("/", (req, res) => {
@@ -302,6 +316,10 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     );
     console.log(
       `   DELETE /api/reviews/admin/:id - Remove review (admin only)`
+    );
+    console.log(`📚 API Documentation:`);
+    console.log(
+      `   GET /api-docs - Interactive API documentation (Swagger UI)`
     );
   });
 }
