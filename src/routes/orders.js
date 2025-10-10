@@ -1093,25 +1093,25 @@ router.patch(
         );
       }
 
-      const response = {
-        success: true,
-        message: "Order status updated",
-        order: result.rows[0],
-      };
-
-      // Send customer notification email for important status changes AFTER responding
-      res.json(response);
-
-      // Trigger email after response is sent
+      // Send customer notification email for important status changes BEFORE responding
       console.log(
         `📧 [EMAIL-TRIGGER] Attempting to send status email for order ${orderId}, status: ${status}`
       );
-      emailService.sendOrderStatusEmail(orderId, status).catch((error) => {
-        console.error(
-          "❌ [EMAIL] Order status email failed for order:",
-          orderId,
-          error
-        );
+      await emailService
+        .sendOrderStatusEmail(orderId, status)
+        .catch((error) => {
+          console.error(
+            "❌ [EMAIL] Order status email failed for order:",
+            orderId,
+            error
+          );
+        });
+
+      // Send response after email is sent
+      return res.json({
+        success: true,
+        message: "Order status updated",
+        order: result.rows[0],
       });
     } catch (error) {
       console.error("Error updating order status:", error);
