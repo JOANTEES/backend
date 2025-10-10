@@ -29,6 +29,7 @@ const brandsRoutes = require("./routes/brands");
 const categoriesRoutes = require("./routes/categories");
 const productVariantsRoutes = require("./routes/product-variants");
 const reportsRoutes = require("./routes/reports");
+const reviewsRoutes = require("./routes/reviews");
 
 // Database connection
 const pool = new Pool({
@@ -101,6 +102,7 @@ app.use("/api/brands", brandsRoutes);
 app.use("/api/categories", categoriesRoutes);
 app.use("/api/product-variants", productVariantsRoutes);
 app.use("/api/reports", reportsRoutes);
+app.use("/api/reviews", reviewsRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -287,6 +289,19 @@ if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
     );
     console.log(
       `   GET /api/reports/customer-insights - Get customer insights and analytics (admin only)`
+    );
+    console.log(`⭐ Review system endpoints:`);
+    console.log(`   GET /api/reviews - Get public reviews`);
+    console.log(`   POST /api/reviews - Create new review`);
+    console.log(`   POST /api/reviews/:id/flag - Flag a review`);
+    console.log(
+      `   GET /api/reviews/admin - Get all reviews for admin (admin only)`
+    );
+    console.log(
+      `   PUT /api/reviews/admin/:id/approve - Approve flagged review (admin only)`
+    );
+    console.log(
+      `   DELETE /api/reviews/admin/:id - Remove review (admin only)`
     );
   });
 }
