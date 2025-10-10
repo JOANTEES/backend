@@ -101,6 +101,16 @@ class EmailService {
     try {
       // Get order details with customer info
       console.log(`📧 [EMAIL-STATUS] Fetching order details from database...`);
+      console.log(`📧 [EMAIL-STATUS] Querying order ID: ${orderId}`);
+      console.log(
+        `📧 [EMAIL-STATUS] Pool connections - Total: ${pool.totalCount}, Idle: ${pool.idleCount}, Waiting: ${pool.waitingCount}`
+      );
+
+      const startTime = Date.now();
+      console.log(
+        `📧 [EMAIL-STATUS] Starting database query at ${new Date().toISOString()}`
+      );
+
       const orderResult = await pool.query(
         `
         SELECT o.*, u.first_name, u.last_name, u.email, u.phone
@@ -109,6 +119,11 @@ class EmailService {
         WHERE o.id = $1
       `,
         [orderId]
+      );
+
+      const queryTime = Date.now() - startTime;
+      console.log(
+        `📧 [EMAIL-STATUS] Query completed in ${queryTime}ms, rows found: ${orderResult.rows.length}`
       );
 
       if (orderResult.rows.length === 0) {
@@ -122,6 +137,11 @@ class EmailService {
       );
 
       // Get order items with product details
+      console.log(
+        `📧 [EMAIL-STATUS] Fetching order items for order ${orderId}...`
+      );
+      const itemsStartTime = Date.now();
+
       const itemsResult = await pool.query(
         `
         SELECT oi.*, p.name as product_name, 
@@ -135,10 +155,18 @@ class EmailService {
         [orderId]
       );
 
+      const itemsQueryTime = Date.now() - itemsStartTime;
+      console.log(
+        `📧 [EMAIL-STATUS] Order items query completed in ${itemsQueryTime}ms, items found: ${itemsResult.rows.length}`
+      );
+
       const orderItems = itemsResult.rows;
 
       // Update order status in the object for template
       order.status = newStatus;
+
+      console.log(`📧 [EMAIL-STATUS] Generating email template...`);
+      const templateStartTime = Date.now();
 
       const html = emailTemplates.orderConfirmation(
         order,
@@ -151,15 +179,25 @@ class EmailService {
         orderItems
       );
 
+      const templateTime = Date.now() - templateStartTime;
+      console.log(
+        `📧 [EMAIL-STATUS] Email template generated in ${templateTime}ms`
+      );
+
       console.log(
         `📧 [EMAIL-STATUS] Sending email to ${order.email} via Resend...`
       );
+      const emailStartTime = Date.now();
+
       const { data, error } = await resend.emails.send({
         from: this.from,
         to: [order.email],
         subject: `Order ${order.order_number} - ${getStatusText(newStatus)}`,
         html: html,
       });
+
+      const emailSendTime = Date.now() - emailStartTime;
+      console.log(`📧 [EMAIL-STATUS] Email sent in ${emailSendTime}ms`);
 
       if (error) {
         console.error("❌ [EMAIL] Order status email failed:", error);
@@ -174,6 +212,9 @@ class EmailService {
       return true;
     } catch (error) {
       console.error("❌ [EMAIL] Order status email error:", error);
+      console.error("❌ [EMAIL] Error stack:", error.stack);
+      console.error("❌ [EMAIL] Error name:", error.name);
+      console.error("❌ [EMAIL] Error message:", error.message);
       return false;
     }
   }
