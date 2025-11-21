@@ -1,6 +1,7 @@
 const express = require("express");
 const { Pool } = require("pg");
 const { auth } = require("../middleware/auth");
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
 
 const router = express.Router();
@@ -177,6 +178,33 @@ router.get("/", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
+    // Optionally verify token if provided
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Fetch user details from database
+        const userResult = await pool.query(
+          "SELECT id, first_name, last_name FROM users WHERE id = $1",
+          [decoded.id]
+        );
+        if (userResult.rows.length > 0) {
+          req.user = {
+            id: decoded.id,
+            email: decoded.email,
+            role: decoded.role,
+            first_name: userResult.rows[0].first_name,
+            last_name: userResult.rows[0].last_name,
+          };
+        } else {
+          req.user = null;
+        }
+      } catch (error) {
+        // Invalid token - continue as guest
+        req.user = null;
+      }
+    }
+
     const { rating, review_text, guest_name } = req.body;
     const user_id = req.user ? req.user.id : null;
 
